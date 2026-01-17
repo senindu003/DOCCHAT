@@ -25,7 +25,7 @@ class MetaData(Base):
     doc_id = Column(String(255), primary_key=True, index=True)  # From create_my_rag output
     username = Column(String(255), ForeignKey("users.username"), primary_key=True, index=True)  # User who uploaded
     element_id = Column(String(255), primary_key=True, index=True)  # UUID for each element
-    element = Column(LONGTEXT)  # The actual content (text, HTML, or base64 image)
+    element = Column(Text)  # The actual content (text, HTML, or base64 image)
     
     # New metadata fields (from your upload form)
     category = Column(String(255), nullable=False, index=True)  # e.g., "CS3063"
