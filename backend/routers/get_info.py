@@ -160,10 +160,11 @@ ANSWER:"""
     # Config for Automatic Function Calling
     config = types.GenerateContentConfig(
         tools=[web_search_async],
-        automatic_function_calling=types.AutomaticFunctionCallingConfig(maximum_remote_calls=3),
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(maximum_remote_calls=5),
         temperature=0.2,
         system_instruction='''You are a helpful RAG assistant to students. Please provide a clear, comprehensive answer. If you ONLY need additional information, examples OR recent updates OR if user ask for web links, web resources, further information explicitly, you must use the web search tool.
-                              If the question is not related to the context, say: "I don't know the answer. Please change the Focused section or category."'''
+                              WHEN using the web search tool, IF the web search tool fail to accept your request, you MUST ignore it and say that in the response EXPLICITLY and try to answer the question as best as you can.
+                              If the question is not related to the QUESTION, CHAT HISTORY or CONTEXT, say: "I don't know the answer. Please change the Focused section or category."'''
 
     )
     
