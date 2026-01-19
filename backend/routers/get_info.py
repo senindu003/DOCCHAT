@@ -115,7 +115,7 @@ def filter_docs(query:str, persist_directory:str, category:str, sections:List[st
     if category == "":
         retriever = vector_store.as_retriever(
             search_type="mmr", 
-            search_kwargs={"k": 10, "fetch_k": 20, "lambda_mult": 0.3}
+            search_kwargs={"k": 10, "fetch_k": 25, "lambda_mult": 0.3}
         )
         docs = retriever.invoke(query)
     else:
