@@ -19,7 +19,7 @@ const App = () => {
           <Route element={<ProtectedRoute />}>
             <Route path="/home" element={<Home />} />
             <Route path="/upload" element={<UploadDocs />} />
-            <Route path="/chat" element={<TestChat />} />
+            <Route path="/chat" element={<Chat />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/login" replace />} />

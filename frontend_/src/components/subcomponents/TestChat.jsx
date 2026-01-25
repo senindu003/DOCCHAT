@@ -12,54 +12,50 @@ const TestChat = () => {
 
   const VITE_API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState(() => {
+    const user = JSON.parse(localStorage.getItem("userDetails")).username;
+    const prev_msgs = JSON.parse(localStorage.getItem("messages"));
+    if (!prev_msgs || prev_msgs.length == 0) {
+      return [
+        {
+          id: "1",
+          content: `Hello ${user}! \n\nI'm DOCCHAT. Ask me anything about your documents!`,
+          role: "assistant",
+          timestamp: new Date(),
+          isQuiz: false,
+        },
+      ];
+    } else {
+      return JSON.parse(localStorage.getItem("messages"));
+    }
+  });
 
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const [userMetaData, setUserMetaData] = useState({});
   const [isNext, setISNext] = useState(false);
-  const [currCategory, setCurrCategory] = useState("");
-  const [currSection, setCurrSection] = useState([]);
+  const [currCategory, setCurrCategory] = useState(() => {
+    const cat = JSON.parse(localStorage.getItem("currCategory"));
+    if (cat) {
+      return cat;
+    } else {
+      return "";
+    }
+  });
+  const [currSection, setCurrSection] = useState(() => {
+    const sec = JSON.parse(localStorage.getItem("currSection"));
+    if (sec && sec.length > 0) {
+      return sec;
+    } else {
+      return [];
+    }
+  });
   const [selectFocus, setSelectFocus] = useState(false);
-  const [isFocused, setIsFocused] = useState(null);
+  const [isFocused, setIsFocused] = useState(currSection.length > 0);
   const [disableCancel, setDisableCancel] = useState(false);
   const [hist, setHist] = useState("");
   const [sliceIdx, setSliceIdx] = useState(-4);
-
-  useEffect(() => {
-    const user = JSON.parse(localStorage.getItem("userDetails")).username;
-    const prev_msgs = JSON.parse(localStorage.getItem("messages"));
-    if (!prev_msgs || prev_msgs.length == 0) {
-      localStorage.setItem(
-        "messages",
-        JSON.stringify([
-          {
-            id: "1",
-            content: `Hello ${user}! \n\nI'm DOCCHAT. Ask me anything about your documents!`,
-            role: "assistant",
-            timestamp: new Date(),
-            isQuiz: false,
-          },
-        ]),
-      );
-    } else {
-      setMessages(() => {
-        return JSON.parse(localStorage.getItem("messages"));
-      });
-    }
-
-    const cat = JSON.parse(localStorage.getItem("currCategory"));
-    const sec = JSON.parse(localStorage.getItem("currSection"));
-
-    if (cat) {
-      setCurrCategory(JSON.parse(localStorage.getItem("currCategory")));
-      if (sec && sec.length > 0) {
-        setCurrSection(JSON.parse(localStorage.getItem("currSection")));
-        setIsFocused(true);
-      }
-    }
-  }, []);
 
   // Auto-scroll to bottom
 
@@ -234,7 +230,7 @@ const TestChat = () => {
 
   const clearChat = () => {
     const user = JSON.parse(localStorage.getItem("userDetails")).username;
-    const defaultMessages = [
+    setMessages([
       {
         id: "1",
         content: `Hello ${user}! \n\nI'm DOCCHAT. Ask me anything about your documents!`,
@@ -242,11 +238,10 @@ const TestChat = () => {
         timestamp: new Date(),
         isQuiz: false,
       },
-    ];
-
-    setMessages(defaultMessages);
+    ]);
     setIsFocused(false);
-    localStorage.setItem("messages", JSON.stringify(defaultMessages));
+    setCurrCategory("");
+    setCurrSection([]);
   };
 
   const copyToClipboard = async (text, isQuiz = false) => {
@@ -645,6 +640,9 @@ const TestChat = () => {
             <button
               className={`relative cursor-pointer ${!isFocused ? "opacity-50 select-none pointer-events-none" : "opacity-100"} flex-1 bg-green-600 hover:bg-green-700 text-white transition rounded-lg p-2`}
               onClick={() => {
+                console.log(JSON.parse(localStorage.getItem("currSection")));
+                console.log(JSON.stringify(currSection));
+                console.log(JSON.stringify(currCategory));
                 alert(
                   `You focused me on sections ${currSection
                     .sort()
