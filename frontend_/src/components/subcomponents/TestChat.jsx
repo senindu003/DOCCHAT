@@ -80,6 +80,10 @@ const TestChat = () => {
     localStorage.setItem("currSection", JSON.stringify(currSection));
   }, [currSection, currCategory]);
 
+  useEffect(() => {
+    setCurrSection(() => []);
+  }, [currCategory]);
+
   const chat_history = () => {
     const msgs = messages.map((message, idx, messages) => {
       if (
@@ -613,13 +617,13 @@ const TestChat = () => {
 
         {/* Input Area */}
         <div className="relative bg-white rounded-b-lg border-t border-gray-200 p-4">
-          <div className="flex flex-row mb-3 text-sm text-gray-500 text-center justify-center items-center">
+          <div className="flex flex-row mb-3 text-sm gap-x-5 text-gray-500 text-center justify-center items-center">
             <button
               onClick={() => {
                 setIsFocused(false);
                 setSelectFocus(true);
               }}
-              className={`relative flex-1 bg-green-600 hover:bg-green-700 text-white transition rounded-lg p-2`}
+              className={`relative cursor-pointer flex-1 bg-green-600 hover:bg-green-700 text-white transition rounded-lg p-2`}
             >
               {isFocused
                 ? "Change Focus"
@@ -633,9 +637,29 @@ const TestChat = () => {
                 </span>
               )}
             </button>
+
             <p className="flex-3">
               Press Enter to send • Shift+Enter for new line
             </p>
+
+            <button
+              className={`relative cursor-pointer ${!isFocused ? "opacity-50 select-none pointer-events-none" : "opacity-100"} flex-1 bg-green-600 hover:bg-green-700 text-white transition rounded-lg p-2`}
+              onClick={() => {
+                alert(
+                  `You focused me on sections ${currSection
+                    .sort()
+                    .toString()} under category ${currCategory}.`,
+                );
+              }}
+            >
+              View Focused
+              {isFocused && (
+                <span className="absolute top-1 right-1 flex size-3">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75"></span>
+                  <span className="relative inline-flex size-3 rounded-full bg-red-600"></span>
+                </span>
+              )}
+            </button>
           </div>
 
           <div className="relative">
