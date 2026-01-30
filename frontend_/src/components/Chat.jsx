@@ -55,7 +55,6 @@ const Chat = () => {
   const [isFocused, setIsFocused] = useState(currSection.length > 0);
   const [disableCancel, setDisableCancel] = useState(false);
   const [hist, setHist] = useState("");
-  const [sliceIdx, setSliceIdx] = useState(-4);
 
   // Auto-scroll to bottom
 
@@ -92,14 +91,17 @@ const Chat = () => {
           "You focused me on sections",
         )
       ) {
-        setSliceIdx(-1);
+        return JSON.stringify({
+          role: messages[messages.length - 1].role,
+          content: messages[messages.length - 1].content,
+        });
       }
       return JSON.stringify({
         role: message.role,
         content: message.content,
       });
     });
-    setHist(msgs.slice(sliceIdx).toString());
+    setHist(msgs.slice(-4).toString());
   };
 
   // Send query to backend API
