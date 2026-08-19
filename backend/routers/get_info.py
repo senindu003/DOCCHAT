@@ -169,7 +169,7 @@ ANSWER:"""
     )
     
     try:
-        response = await client.aio.models.generate_content(model="gemini-2.5-flash-lite", config=config, contents=prompt_text)
+        response = await client.aio.models.generate_content(model="gemini-3.1-flash-lite", config=config, contents=prompt_text)
         return response.text
     
     except Exception as e:

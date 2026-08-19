@@ -56,7 +56,7 @@ def create_ai_enhanced_summary_gemini(text: list[str], images: list[str], tables
 }
 
         llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
+            model="gemini-3.1-flash-lite",
             api_key=GOOGLE_API_KEY,
             temperature=0.7, # Lowered slightly for more consistent summaries
             safety_settings=safety_settings
