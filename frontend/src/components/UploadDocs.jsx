@@ -186,7 +186,14 @@ const UploadDocs = () => {
       });
 
       let result = job;
+      const pollingStartedAt = Date.now();
+      const maxPollingMs = 15 * 60 * 1000;
       while (result.status === "queued" || result.status === "processing") {
+        if (Date.now() - pollingStartedAt >= maxPollingMs) {
+          throw new Error(
+            "Processing took longer than 15 minutes. The upload has stopped being monitored; please retry the file or contact support.",
+          );
+        }
         await new Promise((resolve) => setTimeout(resolve, 1000));
         result = await getUploadJob(job.job_id);
         const averageProgress = result.results.length

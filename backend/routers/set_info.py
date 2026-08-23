@@ -49,6 +49,10 @@ FILE_WORKERS = _positive_int_env("UPLOAD_FILE_CONCURRENCY", 2)
 SUMMARY_WORKERS = _positive_int_env("UPLOAD_SUMMARY_CONCURRENCY", 3)
 VECTOR_BATCH_SIZE = _positive_int_env("UPLOAD_VECTOR_BATCH_SIZE", 32)
 SUMMARY_RETRIES = _positive_int_env("UPLOAD_SUMMARY_RETRIES", 3)
+# ``hi_res`` runs layout/image/table models and can take a very long time on a
+# small Railway container.  Text PDFs should use ``fast``; opt in to hi_res
+# only when table/image extraction is actually needed.
+PDF_PARTITION_STRATEGY = os.getenv("PDF_PARTITION_STRATEGY", "fast").strip().lower()
 LLM_SEMAPHORE = BoundedSemaphore(SUMMARY_WORKERS)
 _vector_locks: dict[str, Lock] = {}
 _vector_locks_guard = Lock()
@@ -64,6 +68,19 @@ def _deepseek_client() -> OpenAI:
 def _is_retryable_enrichment_error(error: Exception) -> bool:
     message = str(error).lower()
     return any(marker in message for marker in ("429", "rate limit", "timeout", "timed out", "connection", "500", "502", "503", "504"))
+
+
+def _partition_document(file):
+    """Use expensive layout extraction only when explicitly requested."""
+    if PDF_PARTITION_STRATEGY == "hi_res":
+        return partition_pdf(
+            file=file,
+            strategy="hi_res",
+            infer_table_structure=True,
+            extract_image_block_types=["image"],
+            extract_image_block_to_payload=True,
+        )
+    return partition_pdf(file=file, strategy="fast")
 
 set_info_router = APIRouter()
 
@@ -270,7 +287,7 @@ def create_vector_store(langchain_docs, persist_directory, progress_callback: Ca
 
 
 def create_my_rag(file, persist_directory, filename, category, section, progress_callback=None):
-    elements = partition_pdf(file=file, strategy="hi_res", infer_table_structure=True, extract_image_block_types=["image"], extract_image_block_to_payload=True)
+    elements = _partition_document(file)
     chunks = chunk_by_title(elements, max_characters=2500, overlap=250, new_after_n_chars=2000, include_orig_elements=True)
     langchain_docs, original_contents = create_langchain_docs(
         chunks,
@@ -359,7 +376,7 @@ def process_single_file(file_path: str, job_file_id: str, username: str, categor
     try:
         _set_job_file_state(job_file_id, status="processing", stage="extracting", progress=10)
         with open(file_path, "rb") as file_content:
-            elements = partition_pdf(file=file_content, strategy="hi_res", infer_table_structure=True, extract_image_block_types=["image"], extract_image_block_to_payload=True)
+            elements = _partition_document(file_content)
 
         _set_job_file_state(job_file_id, stage="chunking", progress=25)
         chunks = chunk_by_title(elements, max_characters=2500, overlap=250, new_after_n_chars=2000, include_orig_elements=True)

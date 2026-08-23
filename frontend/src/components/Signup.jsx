@@ -122,7 +122,7 @@ const Signup = () => {
             placeholder="johndoe123"
             minLength="3"
             maxLength="50"
-            pattern="[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9]"
+            pattern="[A-Za-z0-9][A-Za-z0-9._\\-]*[A-Za-z0-9]"
             title="3–50 characters; letters, numbers, dots, hyphens, and underscores only."
             autoComplete="on"
             className="block w-full p-3 mt-2 text-gray-700 bg-gray-200 appearance-none focus:outline-none focus:bg-gray-300 focus:shadow-inner"
