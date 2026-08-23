@@ -202,7 +202,8 @@ const UploadDocs = () => {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         result = await getUploadJob(job.job_id);
         const averageProgress = result.results.length
-          ? result.results.reduce((total, item) => total + item.progress, 0) / result.results.length
+          ? result.results.reduce((total, item) => total + item.progress, 0) /
+            result.results.length
           : 0;
         setUploadProgress(Math.max(8, averageProgress));
         setUploadMessage("Processing documents on the server…");
@@ -214,7 +215,12 @@ const UploadDocs = () => {
             if (fileResult) {
               return {
                 ...file,
-                status: fileResult.status === "processed" ? "uploaded" : fileResult.status === "failed" ? "error" : "uploading",
+                status:
+                  fileResult.status === "processed"
+                    ? "uploaded"
+                    : fileResult.status === "failed"
+                      ? "error"
+                      : "uploading",
                 stage: fileResult.stage,
                 progress: fileResult.progress,
                 error: fileResult.error || "",
@@ -225,18 +231,29 @@ const UploadDocs = () => {
         );
       }
 
-      if (result.user_details) localStorage.setItem("userDetails", JSON.stringify(result.user_details));
+      if (result.user_details)
+        localStorage.setItem(
+          "userDetails",
+          JSON.stringify(result.user_details),
+        );
       setUploadProgress(100);
-      setFiles((prev) => prev.map((file) => {
-        const fileResult = result.results?.find((item) => item.filename === file.name);
-        return fileResult ? {
-          ...file,
-          status: fileResult.status === "processed" ? "uploaded" : "error",
-          stage: fileResult.stage,
-          progress: fileResult.progress,
-          error: fileResult.error || "",
-        } : file;
-      }));
+      setFiles((prev) =>
+        prev.map((file) => {
+          const fileResult = result.results?.find(
+            (item) => item.filename === file.name,
+          );
+          return fileResult
+            ? {
+                ...file,
+                status:
+                  fileResult.status === "processed" ? "uploaded" : "error",
+                stage: fileResult.stage,
+                progress: fileResult.progress,
+                error: fileResult.error || "",
+              }
+            : file;
+        }),
+      );
 
       // Count results
       const successCount = result.results
@@ -293,7 +310,11 @@ const UploadDocs = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
-      <Dialog open={Boolean(notice)} title="Unsupported files" onClose={() => setNotice(null)}>
+      <Dialog
+        open={Boolean(notice)}
+        title="Unsupported files"
+        onClose={() => setNotice(null)}
+      >
         {notice}
       </Dialog>
       <div className="max-w-6xl mx-auto">
@@ -363,7 +384,10 @@ const UploadDocs = () => {
         )}
 
         <div className="bg-white rounded-xl shadow p-4 md:p-6 mb-6">
-          <label htmlFor="partition-strategy" className="block font-semibold text-gray-800">
+          <label
+            htmlFor="partition-strategy"
+            className="block font-semibold text-gray-800"
+          >
             PDF processing strategy
           </label>
           <select
@@ -373,11 +397,14 @@ const UploadDocs = () => {
             disabled={isUploading}
             className="mt-2 w-full md:w-auto px-3 py-2 border border-gray-300 rounded-lg bg-white disabled:bg-gray-100"
           >
-            <option value="fast">Fast — best for normal text PDFs</option>
-            <option value="hi_res">High resolution — scanned PDFs, tables, and images (slower)</option>
+            <option value="fast">Fast - best for normal text PDFs</option>
+            <option value="hi_res">
+              High resolution - PDFs contain tables and images (slower)
+            </option>
           </select>
           <p className="text-sm text-gray-600 mt-2">
-            Choose High resolution only when the PDF needs layout, image, or table extraction. It uses substantially more time and memory.
+            Choose High resolution only when the PDF needs layout, image, or
+            table extraction. It uses substantially more time and memory.
           </p>
         </div>
 
@@ -471,7 +498,8 @@ const UploadDocs = () => {
                       </div>
                       {file.status === "uploading" && (
                         <p className="text-xs text-blue-700 mt-1">
-                          {file.stage || "Processing"} · {Math.round(file.progress || 0)}%
+                          {file.stage || "Processing"} ·{" "}
+                          {Math.round(file.progress || 0)}%
                         </p>
                       )}
                       {file.status === "error" && file.error && (

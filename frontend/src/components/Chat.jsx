@@ -252,6 +252,8 @@ const Chat = () => {
     setIsFocused(false);
     setCurrCategory("");
     setCurrSection([]);
+    setISNext(false);
+    setSelectFocus(false);
   };
 
   const downloadChatPdf = async () => {
@@ -451,7 +453,7 @@ const Chat = () => {
         <div className="flex flex-col justify-center items-center z-10 bg-white text-black border-2 rounded-2xl min-w-1/4 max-h-1/2 absolute top-2/5 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
           <div className="flex-1 my-3">--Select Section(s)--</div>
           <div className="overflow-auto justify-center items-center">
-            {userMetaData[currCategory].sort().map((section) => {
+            {(Array.isArray(userMetaData[currCategory]) ? userMetaData[currCategory] : []).sort().map((section) => {
               return (
                 <div key={section} className="mx-4 truncate my-1">
                   <input
