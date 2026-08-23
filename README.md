@@ -199,6 +199,7 @@ Authorization: Bearer <access_token>
 | `POST` | `/login` | No | Receive a JWT access token and the user's metadata map |
 | `GET` | `/users/me/` | Yes | Read the current user profile |
 | `POST` | `/set_info` | Yes | Upload, process, and index PDF files |
+| `GET` | `/uploads/{job_id}` | Yes | Read live per-file upload progress |
 | `POST` | `/get_info` | Yes | Ask a document-grounded question |
 
 ### Create an account
@@ -214,6 +215,14 @@ Authorization: Bearer <access_token>
   "password": "use-a-strong-password"
 }
 ```
+
+### Signup input rules
+
+Usernames are used as stable identifiers for each user's document collection.
+They must be 3–50 characters long, start and end with a letter or number, and
+may contain only letters, numbers, dots, hyphens, and underscores. Consecutive
+dots are not allowed. Passwords must be 8–128 printable characters; symbols
+are allowed, but control and non-printable characters are rejected.
 
 ### Sign in
 
@@ -249,6 +258,17 @@ curl -X POST http://127.0.0.1:8000/set_info \
 ```
 
 Only PDFs are accepted. Files are checked by extension and, when available, MIME type; the per-file limit is **100 MB**.
+
+### Live upload progress
+
+Send `async_mode=true` with the multipart upload to receive `202 Accepted` and
+a `job_id` immediately. Poll `GET /uploads/{job_id}` with the same bearer
+token. Each result reports a file's `status`, `stage`, `progress`, chunk count,
+and any file-specific error. Stages are `queued`, `extracting`, `chunking`,
+`enriching`, `indexing`, `complete`, and `failed`.
+
+The supplied frontend uses this mode and reports actual upload bytes followed
+by backend processing status; it does not simulate progress.
 
 ### Ask a question
 
@@ -300,6 +320,25 @@ docker run --rm -e VITE_API_BASE_URL=http://host.docker.internal:8080 -p 5173:80
 ```
 
 The frontend container uses Node 20 Alpine, runs `npm ci`, builds the Vite app at container startup, and serves the resulting single-page application on `PORT` (default `8080`).
+
+### Upload performance configuration
+
+The backend processes independent PDFs and LLM chunk descriptions with bounded
+concurrency, while serialising writes to each user's Chroma collection and
+committing each file's relational metadata as one transaction. Tune these
+backend environment variables only after observing Railway memory and API rate
+limits:
+
+```text
+UPLOAD_FILE_CONCURRENCY=2       # parallel PDF pipelines; use 1 on low-memory plans
+UPLOAD_SUMMARY_CONCURRENCY=3    # total concurrent DeepSeek descriptions
+UPLOAD_VECTOR_BATCH_SIZE=32     # Chroma/Gemini embedding batch size
+UPLOAD_SUMMARY_RETRIES=3        # retries for a transient enrichment failure
+```
+
+Use one backend replica with this in-process worker design. On a service
+restart, unfinished jobs are reported as failed because their temporary upload
+files are no longer available; users can retry the affected file.
 
 ## Railway deployment
 

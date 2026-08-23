@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 import os
 from dotenv import load_dotenv
-from routers.models import Token, TokenData, User, UserInDB
+from routers.models import Token, TokenData, User, UserInDB, SignupRequest
 import jwt
 from fastapi import Depends, APIRouter, HTTPException, status, Body
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -120,10 +120,10 @@ async def login_for_access_token(
 @auth_router.post("/signup")
 async def signup_user(
     db: Annotated[Session, Depends(get_db)],
-    payload: dict = Body(...),
+    payload: SignupRequest,
 ) -> dict:
-    user_by_username = db.query(UserData).filter(UserData.username == payload["username"]).first()
-    user_by_email = db.query(UserData).filter(UserData.email == payload["email"]).first()
+    user_by_username = db.query(UserData).filter(UserData.username == payload.username).first()
+    user_by_email = db.query(UserData).filter(UserData.email == payload.email).first()
     user = user_by_username or user_by_email
     if user:
         raise HTTPException(
@@ -131,8 +131,15 @@ async def signup_user(
             detail="User already exists",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    hashed_password = get_password_hash(payload["password"])
-    new_user = UserData(username=payload["username"], firstname=payload["firstname"], lastname=payload["lastname"], email=payload["email"], disabled=False, hashed_password=hashed_password)
+    hashed_password = get_password_hash(payload.password)
+    new_user = UserData(
+        username=payload.username,
+        firstname=payload.firstname,
+        lastname=payload.lastname,
+        email=payload.email,
+        disabled=False,
+        hashed_password=hashed_password,
+    )
     db.add(new_user)
     db.commit()
     return {"message": "Signup successful"}

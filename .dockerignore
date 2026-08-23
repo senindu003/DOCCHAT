@@ -1,9 +1,13 @@
 Dockerfile*
 .dockerignore
 .venv
+**/.venv/
 __pycache__/
 *.pyc
 .env
 .git/
 tests/
 *.log
+frontend/
+**/__pycache__/
+**/*.pyc

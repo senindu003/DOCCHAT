@@ -36,7 +36,34 @@ class MetaData(Base):
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
+
     user = relationship("UserData", back_populates="meta")
-    
-    
+
+
+class UploadJob(Base):
+    __tablename__ = "upload_jobs"
+
+    id = Column(String(36), primary_key=True)
+    username = Column(String(255), ForeignKey("users.username"), nullable=False, index=True)
+    status = Column(String(32), nullable=False, default="queued", index=True)
+    total_files = Column(Integer, nullable=False)
+    completed_files = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class UploadJobFile(Base):
+    __tablename__ = "upload_job_files"
+
+    id = Column(String(36), primary_key=True)
+    job_id = Column(String(36), ForeignKey("upload_jobs.id"), nullable=False, index=True)
+    filename = Column(String(500), nullable=False)
+    category = Column(String(255), nullable=False)
+    section = Column(String(255), nullable=False)
+    status = Column(String(32), nullable=False, default="queued", index=True)
+    stage = Column(String(64), nullable=False, default="queued")
+    progress = Column(Integer, nullable=False, default=0)
+    chunks_total = Column(Integer, nullable=False, default=0)
+    chunks_completed = Column(Integer, nullable=False, default=0)
+    error = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())

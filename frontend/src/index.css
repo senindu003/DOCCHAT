@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* KaTeX math styling */
+.katex {
+  font-size: 1.1em !important;
+}
+
+/* Math blocks in quiz */
+.bg-gray-900 .katex {
+  color: #f3f4f6 !important;
+}
+
+/* Math in regular messages */
+.bg-gray-100 .katex {
+  color: #374151 !important;
+}
+
+/* Ensure math formulas don't overflow */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5em 0;
+}
+
+/* Quiz content styling */
+.bg-gray-900 {
+  font-family: "Courier New", Monaco, monospace;
+  line-height: 1.6;
+}
+
+.bg-gray-900 p {
+  margin-bottom: 0.75em;
+}
+
+.bg-gray-900 ol {
+  list-style-type: decimal;
+  padding-left: 1.5em;
+  margin-bottom: 1em;
+}
+
+.bg-gray-900 li {
+  margin-bottom: 0.5em;
+}
+
+.bg-gray-900 strong {
+  color: #ffffff;
+  font-weight: 600;
+}
