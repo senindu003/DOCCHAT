@@ -9,4 +9,9 @@ export default defineConfig({
     host: true,
     port: 5173,
   },
+  // Railway routes requests through a public `*.up.railway.app` hostname.
+  // A leading dot permits Railway subdomains without allowing arbitrary hosts.
+  preview: {
+    allowedHosts: [".up.railway.app"],
+  },
 });
