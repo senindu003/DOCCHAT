@@ -2,11 +2,13 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { loginUser } from "../api";
+import Dialog from "./Dialog";
 
 const Login = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [notice, setNotice] = useState(null);
 
   const handleSubmitLogin = async (e) => {
     e.preventDefault();
@@ -27,17 +29,26 @@ const Login = () => {
           },
         ])
       );
-      alert(data.message);
-
-      navigate("/home", { replace: false });
+      setNotice({ message: data.message, redirect: true });
     } catch (error) {
       console.error(error.message);
-      alert(error.message);
+      setNotice({ message: error.message, redirect: false });
     }
   };
 
   return (
     <div className="relative flex min-h-screen text-gray-800 antialiased flex-col justify-center overflow-hidden bg-gray-50 py-6 sm:py-12">
+      <Dialog
+        open={Boolean(notice)}
+        title={notice?.redirect ? "Login successful" : "Login failed"}
+        onClose={() => {
+          const shouldRedirect = notice?.redirect;
+          setNotice(null);
+          if (shouldRedirect) navigate("/home", { replace: false });
+        }}
+      >
+        {notice?.message}
+      </Dialog>
       <div className="relative py-3 sm:w-96 mx-auto text-center">
         <span className="text-2xl font-light ">Login to your account</span>
         <div className="mt-4 bg-white shadow-md rounded-lg text-left">

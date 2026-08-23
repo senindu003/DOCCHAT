@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { createUploadJob, getUploadJob } from "../api";
+import Dialog from "./Dialog";
 
 const UploadDocs = () => {
   const navigate = useNavigate();
@@ -19,6 +20,8 @@ const UploadDocs = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState(null); // null, 'success', 'error'
   const [uploadMessage, setUploadMessage] = useState("");
+  const [partitionStrategy, setPartitionStrategy] = useState("fast");
+  const [notice, setNotice] = useState(null);
 
   const onDrop = (event) => {
     event.preventDefault();
@@ -81,7 +84,7 @@ const UploadDocs = () => {
 
     if (nonPdfFiles.length > 0) {
       const nonPdfNames = nonPdfFiles.map((f) => f.name).join(", ");
-      alert(`Only PDF files are allowed. Skipped: ${nonPdfNames}`);
+      setNotice(`Only PDF files are allowed. Skipped: ${nonPdfNames}`);
     }
   };
 
@@ -177,6 +180,7 @@ const UploadDocs = () => {
       formData.append("categories", fileInfo.category.trim());
       formData.append("sections", fileInfo.section.trim());
     });
+    formData.append("partition_strategy", partitionStrategy);
 
     try {
       formData.append("async_mode", "true");
@@ -187,11 +191,12 @@ const UploadDocs = () => {
 
       let result = job;
       const pollingStartedAt = Date.now();
-      const maxPollingMs = 15 * 60 * 1000;
+      const maxPollingMinutes = partitionStrategy === "hi_res" ? 30 : 15;
+      const maxPollingMs = maxPollingMinutes * 60 * 1000;
       while (result.status === "queued" || result.status === "processing") {
         if (Date.now() - pollingStartedAt >= maxPollingMs) {
           throw new Error(
-            "Processing took longer than 15 minutes. The upload has stopped being monitored; please retry the file or contact support.",
+            `Processing took longer than ${maxPollingMinutes} minutes. The upload has stopped being monitored; please retry the file or contact support.`,
           );
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -288,6 +293,9 @@ const UploadDocs = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+      <Dialog open={Boolean(notice)} title="Unsupported files" onClose={() => setNotice(null)}>
+        {notice}
+      </Dialog>
       <div className="max-w-6xl mx-auto">
         <button
           onClick={() => {
@@ -353,6 +361,25 @@ const UploadDocs = () => {
             <p className="text-sm text-gray-600 mt-2">{uploadMessage}</p>
           </div>
         )}
+
+        <div className="bg-white rounded-xl shadow p-4 md:p-6 mb-6">
+          <label htmlFor="partition-strategy" className="block font-semibold text-gray-800">
+            PDF processing strategy
+          </label>
+          <select
+            id="partition-strategy"
+            value={partitionStrategy}
+            onChange={(event) => setPartitionStrategy(event.target.value)}
+            disabled={isUploading}
+            className="mt-2 w-full md:w-auto px-3 py-2 border border-gray-300 rounded-lg bg-white disabled:bg-gray-100"
+          >
+            <option value="fast">Fast — best for normal text PDFs</option>
+            <option value="hi_res">High resolution — scanned PDFs, tables, and images (slower)</option>
+          </select>
+          <p className="text-sm text-gray-600 mt-2">
+            Choose High resolution only when the PDF needs layout, image, or table extraction. It uses substantially more time and memory.
+          </p>
+        </div>
 
         {/* Upload Status Summary */}
         {files.length > 0 && !isUploading && (

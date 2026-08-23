@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
+import Dialog from "../Dialog";
 
 const Test = () => {
   const [currFiles, setCurrFiles] = useState([]);
   const [categories, setCategories] = useState({});
   const [sections, setSections] = useState({});
+  const [notice, setNotice] = useState(null);
 
   // Simplified useEffect to initialize categories/sections
   useEffect(() => {
@@ -64,6 +66,9 @@ const Test = () => {
 
   return (
     <div className="h-full flex flex-col justify-center items-center">
+      <Dialog open={Boolean(notice)} title="Upload details required" onClose={() => setNotice(null)}>
+        {notice}
+      </Dialog>
       <div className="h-[15dvh]"></div>
       <div className="w-3/4 flex flex-col justify-center items-center h-[70dvh]">
         <h1 className="text-xl mb-6 ">Drop your files here</h1>
@@ -159,7 +164,7 @@ const Test = () => {
                   };
                 });
               } catch (err) {
-                alert(err);
+                setNotice(err.message || String(err));
               }
 
               console.log("Files to upload:", metaData);

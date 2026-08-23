@@ -3,9 +3,10 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
-import { Send, Bot, User, Copy, RefreshCw } from "lucide-react";
+import { Send, Bot, User, Copy, RefreshCw, Download } from "lucide-react";
 import "katex/dist/katex.min.css";
 import { useNavigate } from "react-router-dom";
+import Dialog from "./Dialog";
 
 const Chat = () => {
   const navigate = useNavigate();
@@ -55,6 +56,8 @@ const Chat = () => {
   const [isFocused, setIsFocused] = useState(currSection.length > 0);
   const [disableCancel, setDisableCancel] = useState(false);
   const [hist, setHist] = useState("");
+  const [notice, setNotice] = useState(null);
+  const [showClearDialog, setShowClearDialog] = useState(false);
 
   // Auto-scroll to bottom
 
@@ -251,6 +254,51 @@ const Chat = () => {
     setCurrSection([]);
   };
 
+  const downloadChatPdf = async () => {
+    const { jsPDF } = await import("jspdf");
+    const pdf = new jsPDF({ unit: "pt", format: "a4" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 48;
+    const contentWidth = pageWidth - margin * 2;
+    let y = margin;
+
+    const addLines = (lines, lineHeight = 16) => {
+      lines.forEach((line) => {
+        if (y + lineHeight > pageHeight - margin) {
+          pdf.addPage();
+          y = margin;
+        }
+        pdf.text(line, margin, y);
+        y += lineHeight;
+      });
+    };
+
+    pdf.setFontSize(18);
+    addLines(["DOCCHAT conversation"], 22);
+    pdf.setFontSize(10);
+    addLines([`Exported ${new Date().toLocaleString()}`, ""], 15);
+
+    messages.forEach((message) => {
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(11);
+      addLines([`${message.role === "user" ? "You" : "DOCCHAT"} — ${new Date(message.timestamp).toLocaleString()}`]);
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(10);
+      const plainContent = String(message.content)
+        .replace(/\*\*/g, "")
+        .replace(/`/g, "")
+        .replace(/#+\s/g, "")
+        .trim();
+      addLines(pdf.splitTextToSize(plainContent, contentWidth));
+      y += 10;
+    });
+
+    pdf.save(`docchat-${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
+  const requestClearChat = () => setShowClearDialog(true);
+
   const copyToClipboard = async (text, isQuiz = false) => {
     try {
       // Remove markdown formatting if it's a quiz
@@ -262,7 +310,7 @@ const Chat = () => {
             .trim()
         : text;
       await navigator.clipboard.writeText(textToCopy);
-      alert("Copied to clipboard!");
+      setNotice({ title: "Copied", message: "The response was copied to your clipboard." });
     } catch (err) {
       console.error("Failed to copy:", err);
     }
@@ -325,6 +373,23 @@ const Chat = () => {
 
   return (
     <div id="wrapper" className="relative">
+      <Dialog open={Boolean(notice)} title={notice?.title || "Notice"} onClose={() => setNotice(null)}>
+        {notice?.message}
+      </Dialog>
+      <Dialog
+        open={showClearDialog}
+        title="Clear this chat?"
+        onClose={() => setShowClearDialog(false)}
+        actions={
+          <>
+            <button type="button" onClick={() => setShowClearDialog(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+            <button type="button" onClick={() => { clearChat(); setShowClearDialog(false); }} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Clear without saving</button>
+            <button type="button" onClick={async () => { await downloadChatPdf(); clearChat(); setShowClearDialog(false); }} className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">Save PDF & clear</button>
+          </>
+        }
+      >
+        Would you like to download this conversation as a PDF before clearing it?
+      </Dialog>
       {!isNext && selectFocus && (
         <div className="flex flex-col justify-center items-center z-10 bg-white text-black border-2 rounded-2xl min-w-1/4 max-h-1/2 absolute top-2/5 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
           <div className="flex-1 my-3">--Select Category--</div>
@@ -487,13 +552,19 @@ const Chat = () => {
             </div>
             <div className="flex flex-row justify-around items-center gap-x-4">
               <button
-                onClick={() => {
-                  clearChat();
-                }}
+                onClick={requestClearChat}
                 className="flex items-center px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition"
               >
                 <RefreshCw className="w-4 h-4" />
                 Clear Chat
+              </button>
+              <button
+                onClick={downloadChatPdf}
+                disabled={messages.length === 0}
+                className="flex items-center px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition disabled:opacity-50"
+              >
+                <Download className="w-4 h-4 mr-1" />
+                Download PDF
               </button>
               <button
                 onClick={() => {
@@ -650,11 +721,10 @@ const Chat = () => {
                 console.log(JSON.parse(localStorage.getItem("currSection")));
                 console.log(JSON.stringify(currSection));
                 console.log(JSON.stringify(currCategory));
-                alert(
-                  `You focused me on sections ${currSection
-                    .sort()
-                    .toString()} under category ${currCategory}.`,
-                );
+                setNotice({
+                  title: "Current focus",
+                  message: `You focused DOCCHAT on sections ${currSection.sort().toString()} under category ${currCategory}.`,
+                });
               }}
             >
               View Focused

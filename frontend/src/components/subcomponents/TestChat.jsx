@@ -6,6 +6,7 @@ import rehypeKatex from "rehype-katex";
 import { Send, Bot, User, Copy, RefreshCw } from "lucide-react";
 import "katex/dist/katex.min.css";
 import { useNavigate } from "react-router-dom";
+import Dialog from "../Dialog";
 
 const TestChat = () => {
   const navigate = useNavigate();
@@ -55,6 +56,7 @@ const TestChat = () => {
   const [isFocused, setIsFocused] = useState(currSection.length > 0);
   const [disableCancel, setDisableCancel] = useState(false);
   const [hist, setHist] = useState("");
+  const [notice, setNotice] = useState(null);
   const [sliceIdx, setSliceIdx] = useState(-4);
 
   // Auto-scroll to bottom
@@ -255,7 +257,7 @@ const TestChat = () => {
             .trim()
         : text;
       await navigator.clipboard.writeText(textToCopy);
-      alert("Copied to clipboard!");
+      setNotice({ title: "Copied", message: "The response was copied to your clipboard." });
     } catch (err) {
       console.error("Failed to copy:", err);
     }
@@ -318,6 +320,9 @@ const TestChat = () => {
 
   return (
     <div id="wrapper" className="relative">
+      <Dialog open={Boolean(notice)} title={notice?.title || "Notice"} onClose={() => setNotice(null)}>
+        {notice?.message}
+      </Dialog>
       {!isNext && selectFocus && (
         <div className="flex flex-col justify-center items-center z-10 bg-white text-black border-2 rounded-2xl min-w-1/4 max-h-1/2 absolute top-2/5 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
           <div className="flex-1 my-3">--Select Category--</div>
@@ -643,11 +648,10 @@ const TestChat = () => {
                 console.log(JSON.parse(localStorage.getItem("currSection")));
                 console.log(JSON.stringify(currSection));
                 console.log(JSON.stringify(currCategory));
-                alert(
-                  `You focused me on sections ${currSection
-                    .sort()
-                    .toString()} under category ${currCategory}.`,
-                );
+                setNotice({
+                  title: "Current focus",
+                  message: `You focused DOCCHAT on sections ${currSection.sort().toString()} under category ${currCategory}.`,
+                });
               }}
             >
               View Focused

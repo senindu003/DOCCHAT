@@ -53,6 +53,7 @@ SUMMARY_RETRIES = _positive_int_env("UPLOAD_SUMMARY_RETRIES", 3)
 # small Railway container.  Text PDFs should use ``fast``; opt in to hi_res
 # only when table/image extraction is actually needed.
 PDF_PARTITION_STRATEGY = os.getenv("PDF_PARTITION_STRATEGY", "fast").strip().lower()
+ALLOWED_PARTITION_STRATEGIES = {"fast", "hi_res"}
 LLM_SEMAPHORE = BoundedSemaphore(SUMMARY_WORKERS)
 _vector_locks: dict[str, Lock] = {}
 _vector_locks_guard = Lock()
@@ -70,9 +71,10 @@ def _is_retryable_enrichment_error(error: Exception) -> bool:
     return any(marker in message for marker in ("429", "rate limit", "timeout", "timed out", "connection", "500", "502", "503", "504"))
 
 
-def _partition_document(file):
+def _partition_document(file, strategy: str | None = None):
     """Use expensive layout extraction only when explicitly requested."""
-    if PDF_PARTITION_STRATEGY == "hi_res":
+    selected_strategy = strategy or PDF_PARTITION_STRATEGY
+    if selected_strategy == "hi_res":
         return partition_pdf(
             file=file,
             strategy="hi_res",
@@ -286,8 +288,8 @@ def create_vector_store(langchain_docs, persist_directory, progress_callback: Ca
 
 
 
-def create_my_rag(file, persist_directory, filename, category, section, progress_callback=None):
-    elements = _partition_document(file)
+def create_my_rag(file, persist_directory, filename, category, section, progress_callback=None, partition_strategy=None):
+    elements = _partition_document(file, partition_strategy)
     chunks = chunk_by_title(elements, max_characters=2500, overlap=250, new_after_n_chars=2000, include_orig_elements=True)
     langchain_docs, original_contents = create_langchain_docs(
         chunks,
@@ -368,7 +370,15 @@ def _set_job_file_state(job_file_id: str, **changes) -> None:
         db.close()
 
 
-def process_single_file(file_path: str, job_file_id: str, username: str, category: str, section: str, filename: str):
+def process_single_file(
+    file_path: str,
+    job_file_id: str,
+    username: str,
+    category: str,
+    section: str,
+    filename: str,
+    partition_strategy: str,
+):
     """Process one file with its own DB session; safe to call from a worker thread."""
     db = SessionLocal()
     vector_store = None
@@ -376,7 +386,7 @@ def process_single_file(file_path: str, job_file_id: str, username: str, categor
     try:
         _set_job_file_state(job_file_id, status="processing", stage="extracting", progress=10)
         with open(file_path, "rb") as file_content:
-            elements = _partition_document(file_content)
+            elements = _partition_document(file_content, partition_strategy)
 
         _set_job_file_state(job_file_id, stage="chunking", progress=25)
         chunks = chunk_by_title(elements, max_characters=2500, overlap=250, new_after_n_chars=2000, include_orig_elements=True)
@@ -541,6 +551,7 @@ def process_upload_job(job_id: str, username: str, work_items: list[dict]) -> No
                     item["category"],
                     item["section"],
                     item["filename"],
+                    item["partition_strategy"],
                 )
                 for item in work_items
             ]
@@ -589,9 +600,14 @@ async def set_info(
     categories: List[str] = Form(...),
     sections: List[str] = Form(...),
     async_mode: bool = Form(False),
+    partition_strategy: str = Form(PDF_PARTITION_STRATEGY),
     db: Session = Depends(get_db),
 ):
     """Create a persisted upload job. Set ``async_mode=true`` for live progress polling."""
+    partition_strategy = partition_strategy.strip().lower()
+    if partition_strategy not in ALLOWED_PARTITION_STRATEGIES:
+        raise HTTPException(status_code=400, detail="Processing strategy must be 'fast' or 'hi_res'.")
+
     if len(files) != len(categories) or len(files) != len(sections):
         raise HTTPException(status_code=400, detail="Number of files, categories, and sections must match")
     if not files:
@@ -616,7 +632,14 @@ async def set_info(
             )
             db.add(job_file)
             path = await _save_upload_to_tempfile(file)
-            work_items.append({"path": path, "job_file_id": job_file.id, "filename": file.filename, "category": category.strip(), "section": section.strip()})
+            work_items.append({
+                "path": path,
+                "job_file_id": job_file.id,
+                "filename": file.filename,
+                "category": category.strip(),
+                "section": section.strip(),
+                "partition_strategy": partition_strategy,
+            })
     except Exception:
         db.rollback()
         for item in work_items:

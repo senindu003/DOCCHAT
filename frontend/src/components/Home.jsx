@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import Dialog from "./Dialog";
 
 const Home = () => {
   const [isDocsAvailable, setIsDocsAvailable] = useState(false);
+  const [notice, setNotice] = useState(null);
 
   useEffect(() => {
     const user_details = JSON.parse(localStorage.getItem("userDetails"));
@@ -13,7 +15,7 @@ const Home = () => {
 
   const check = () => {
     !isDocsAvailable
-      ? alert("Please Upload some documents First!")
+      ? setNotice("Please upload at least one document first.")
       : navigate("/chat", { replace: false });
   };
 
@@ -21,6 +23,9 @@ const Home = () => {
 
   return (
     <div className="relative h-screen w-full justify-center items-center flex flex-col">
+      <Dialog open={Boolean(notice)} title="Documents required" onClose={() => setNotice(null)}>
+        {notice}
+      </Dialog>
       <div className="absolute top-1 right-1 p-3 text-xl border-2 rounded-xl border-amber-500">
         <button
           onClick={() => {

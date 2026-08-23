@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { signupUser } from "../api";
+import Dialog from "./Dialog";
 
 const Signup = () => {
   const navigate = useNavigate();
@@ -13,6 +14,7 @@ const Signup = () => {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [formError, setFormError] = useState("");
+  const [notice, setNotice] = useState(null);
 
   const handleSubmitSignup = async (e) => {
     e.preventDefault();
@@ -43,8 +45,7 @@ const Signup = () => {
         password,
       });
 
-      alert(data.message);
-      navigate("/login", { replace: false });
+      setNotice(data.message);
     } catch (error) {
       console.error(error.message);
       setFormError(error.message);
@@ -53,6 +54,16 @@ const Signup = () => {
 
   return (
     <div className="grid min-h-screen place-items-center">
+      <Dialog
+        open={Boolean(notice)}
+        title="Account created"
+        onClose={() => {
+          setNotice(null);
+          navigate("/login", { replace: false });
+        }}
+      >
+        {notice}
+      </Dialog>
       <div className="w-11/12 px-12 py-5 bg-white sm:w-8/12 md:w-1/2 lg:w-5/12">
         <h1 className="text-xl text-center font-semibold">
           Welcome to DOCCHAT
