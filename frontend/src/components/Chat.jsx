@@ -261,7 +261,8 @@ const Chat = () => {
     const pdf = new jsPDF({ unit: "pt", format: "a4" });
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
-    const margin = 48;
+    const margin = 46;
+    if (false) { // Legacy plain-text layout retained temporarily for source compatibility.
     const contentWidth = pageWidth - margin * 2;
     let y = margin;
 
@@ -295,6 +296,118 @@ const Chat = () => {
       addLines(pdf.splitTextToSize(plainContent, contentWidth));
       y += 10;
     });
+
+    }
+
+    const headerHeight = 112;
+    const footerHeight = 42;
+    const cardWidth = pageWidth - margin * 2;
+    const cardTextWidth = cardWidth - 36;
+    const bodyLineHeight = 14;
+    const cardTopPadding = 34;
+    const cardBottomPadding = 18;
+    let y = headerHeight + 24;
+
+    const cleanText = (value) => String(value)
+      .replace(/\*\*/g, "")
+      .replace(/`/g, "")
+      .replace(/^#{1,6}\s+/gm, "")
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2013\u2014]/g, "-")
+      .replace(/[^\x20-\x7E\n\r\t]/g, "?")
+      .replace(/\r/g, "")
+      .trim();
+
+    const drawHeader = () => {
+      pdf.setFillColor(22, 101, 52);
+      pdf.rect(0, 0, pageWidth, headerHeight, "F");
+      pdf.setFillColor(255, 255, 255);
+      pdf.circle(margin + 14, 38, 14, "F");
+      pdf.setTextColor(22, 101, 52);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(13);
+      pdf.text("D", margin + 9.5, 42.5);
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(20);
+      pdf.text("DOCCHAT", margin + 40, 36);
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(9);
+      pdf.text("Conversation transcript", margin + 40, 53);
+      pdf.setFontSize(8);
+      pdf.text(`Exported ${new Date().toLocaleString()}`, margin, 88);
+    };
+
+    const startNewPage = () => {
+      pdf.addPage();
+      drawHeader();
+      y = headerHeight + 24;
+    };
+
+    drawHeader();
+    pdf.setTextColor(75, 85, 99);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    pdf.text(`${messages.length} message${messages.length === 1 ? "" : "s"}`, margin, y);
+    y += 20;
+
+    messages.forEach((message) => {
+      const isUser = message.role === "user";
+      const author = isUser ? "YOU" : "DOCCHAT";
+      const timestamp = new Date(message.timestamp).toLocaleString();
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(10);
+      const lines = pdf.splitTextToSize(cleanText(message.content) || "(No text)", cardTextWidth);
+      let lineIndex = 0;
+      let continuation = false;
+
+      while (lineIndex < lines.length) {
+        const availableHeight = pageHeight - footerHeight - y;
+        const availableLineCount = Math.floor((availableHeight - cardTopPadding - cardBottomPadding) / bodyLineHeight);
+        if (availableLineCount < 1) {
+          startNewPage();
+          continue;
+        }
+
+        const cardLines = lines.slice(lineIndex, lineIndex + availableLineCount);
+        const cardHeight = cardTopPadding + cardLines.length * bodyLineHeight + cardBottomPadding;
+        const accent = isUser ? [37, 99, 235] : [22, 101, 52];
+        const background = isUser ? [239, 246, 255] : [240, 253, 244];
+
+        pdf.setFillColor(...background);
+        pdf.roundedRect(margin, y, cardWidth, cardHeight, 8, 8, "F");
+        pdf.setFillColor(...accent);
+        pdf.roundedRect(margin, y, 5, cardHeight, 3, 3, "F");
+        pdf.setTextColor(...accent);
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(9);
+        pdf.text(continuation ? `${author} (continued)` : author, margin + 18, y + 18);
+        pdf.setTextColor(107, 114, 128);
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(8);
+        pdf.text(timestamp, pageWidth - margin - 18, y + 18, { align: "right" });
+        pdf.setTextColor(31, 41, 55);
+        pdf.setFontSize(10);
+        pdf.text(cardLines, margin + 18, y + cardTopPadding, { lineHeightFactor: 1.4 });
+
+        y += cardHeight + 12;
+        lineIndex += cardLines.length;
+        continuation = true;
+      }
+    });
+
+    const totalPages = pdf.getNumberOfPages();
+    for (let page = 1; page <= totalPages; page += 1) {
+      pdf.setPage(page);
+      pdf.setDrawColor(229, 231, 235);
+      pdf.line(margin, pageHeight - footerHeight + 4, pageWidth - margin, pageHeight - footerHeight + 4);
+      pdf.setTextColor(107, 114, 128);
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(8);
+      pdf.text("Generated locally by DOCCHAT - not stored on the server", margin, pageHeight - 20);
+      pdf.text(`Page ${page} of ${totalPages}`, pageWidth - margin, pageHeight - 20, { align: "right" });
+    }
 
     pdf.save(`docchat-${new Date().toISOString().slice(0, 10)}.pdf`);
   };
