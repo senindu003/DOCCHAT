@@ -257,7 +257,10 @@ const Chat = () => {
   };
 
   const downloadChatPdf = async () => {
-    const { jsPDF } = await import("jspdf");
+    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
     const pdf = new jsPDF({ unit: "pt", format: "a4" });
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
@@ -316,6 +319,7 @@ const Chat = () => {
       .replace(/[\u2018\u2019]/g, "'")
       .replace(/[\u201C\u201D]/g, '"')
       .replace(/[\u2013\u2014]/g, "-")
+      .replace(/^\s*[*+]\s+/gm, "- ")
       .replace(/[^\x20-\x7E\n\r\t]/g, "?")
       .replace(/\r/g, "")
       .trim();
@@ -352,13 +356,48 @@ const Chat = () => {
     pdf.text(`${messages.length} message${messages.length === 1 ? "" : "s"}`, margin, y);
     y += 20;
 
-    messages.forEach((message) => {
+    const splitMarkdownBlocks = (content) => {
+      const blocks = [];
+      const textLines = [];
+      let tableLines = [];
+      const flushText = () => {
+        const text = textLines.join("\n").trim();
+        if (text) blocks.push({ type: "text", content: text });
+        textLines.length = 0;
+      };
+      const flushTable = () => {
+        const rows = tableLines
+          .map((line) => line.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cleanText(cell)))
+          .filter((row) => row.some((cell) => cell));
+        if (rows.length >= 2) {
+          blocks.push({ type: "table", header: rows[0], body: rows.slice(1).filter((row) => !row.every((cell) => /^:?-{2,}:?$/.test(cell))) });
+        } else {
+          textLines.push(...tableLines);
+        }
+        tableLines = [];
+      };
+
+      String(content).replace(/\r/g, "").split("\n").forEach((line) => {
+        if (line.trim().startsWith("|")) {
+          flushText();
+          tableLines.push(line);
+        } else {
+          if (tableLines.length) flushTable();
+          textLines.push(line);
+        }
+      });
+      if (tableLines.length) flushTable();
+      flushText();
+      return blocks.length ? blocks : [{ type: "text", content: "(No text)" }];
+    };
+
+    const drawTextCard = (message, content) => {
       const isUser = message.role === "user";
       const author = isUser ? "YOU" : "DOCCHAT";
       const timestamp = new Date(message.timestamp).toLocaleString();
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(10);
-      const lines = pdf.splitTextToSize(cleanText(message.content) || "(No text)", cardTextWidth);
+      const lines = pdf.splitTextToSize(cleanText(content) || "(No text)", cardTextWidth);
       let lineIndex = 0;
       let continuation = false;
 
@@ -395,6 +434,35 @@ const Chat = () => {
         lineIndex += cardLines.length;
         continuation = true;
       }
+    };
+
+    const drawTable = (message, table) => {
+      const isUser = message.role === "user";
+      const accent = isUser ? [37, 99, 235] : [22, 101, 52];
+      if (y + 84 > pageHeight - footerHeight) startNewPage();
+      pdf.setTextColor(...accent);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(9);
+      pdf.text(`${isUser ? "YOU" : "DOCCHAT"} - table`, margin, y + 8);
+      autoTable(pdf, {
+        startY: y + 18,
+        margin: { left: margin, right: margin, top: headerHeight + 24, bottom: footerHeight + 12 },
+        head: [table.header],
+        body: table.body,
+        theme: "grid",
+        styles: { font: "helvetica", fontSize: 8, cellPadding: 5, textColor: [31, 41, 55], lineColor: [209, 213, 219] },
+        headStyles: { fillColor: accent, textColor: [255, 255, 255], fontStyle: "bold" },
+        alternateRowStyles: { fillColor: [249, 250, 251] },
+        willDrawPage: () => drawHeader(),
+      });
+      y = pdf.lastAutoTable.finalY + 14;
+    };
+
+    messages.forEach((message) => {
+      splitMarkdownBlocks(message.content).forEach((block) => {
+        if (block.type === "table") drawTable(message, block);
+        else drawTextCard(message, block.content);
+      });
     });
 
     const totalPages = pdf.getNumberOfPages();
