@@ -779,6 +779,9 @@ const Chat = () => {
             {messages.map((message) => (
               <div
                 key={message.id}
+                data-export-message
+                data-export-role={message.role}
+                data-export-timestamp={new Date(message.timestamp).toLocaleString()}
                 className={`flex gap-4 ${
                   message.role === "user" ? "flex-row-reverse" : ""
                 }`}
@@ -831,7 +834,7 @@ const Chat = () => {
                   </div>
 
                   {/* Message Content */}
-                  <div className="max-w-none">
+                  <div data-export-content className="max-w-none">
                     {message.role === "user" ? (
                       <div className="whitespace-pre-wrap">
                         {message.content}
