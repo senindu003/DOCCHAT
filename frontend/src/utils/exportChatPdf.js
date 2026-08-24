@@ -39,7 +39,9 @@ const applyContentStyles = (root) => {
 const buildExportSurface = (chatElement, exportedAt) => {
   const surface = document.createElement("article");
   surface.setAttribute("aria-hidden", "true");
-  surface.style.cssText = "position:fixed;left:-10000px;top:0;width:760px;box-sizing:border-box;padding:36px;background:#ffffff;color:#111827;font-family:Arial,Helvetica,sans-serif";
+  // Keep the source visible to html2canvas. Off-screen elements render as blank
+  // in several browsers, so the export surface is shown briefly above the app.
+  surface.style.cssText = "position:absolute;left:24px;top:24px;z-index:2147483647;width:760px;box-sizing:border-box;padding:36px;background:#ffffff;color:#111827;font-family:Arial,Helvetica,sans-serif;box-shadow:0 16px 48px rgba(0,0,0,.24)";
   surface.innerHTML = `<header style="margin-bottom:28px;border-bottom:2px solid #166534;padding-bottom:16px"><h1 style="margin:0;color:#166534;font-size:28px;line-height:1.2">DOCCHAT conversation</h1><p style="margin:7px 0 0;color:#6b7280;font-size:13px">Exported ${exportedAt}</p></header>`;
 
   chatElement.querySelectorAll("[data-export-message]").forEach((message) => {
@@ -87,6 +89,7 @@ export const exportChatPdf = async (chatElement) => {
   const exportedAt = new Date().toLocaleString();
   const surface = buildExportSurface(chatElement, exportedAt);
   try {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
     await new Promise((resolve) => {
       pdf.html(surface, {
         x: MARGIN,

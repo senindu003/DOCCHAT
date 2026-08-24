@@ -90,29 +90,15 @@ const Chat = () => {
   }, [currCategory]);
 
   const chat_history = () => {
-    const msgs = messages.map((message, idx, messages) => {
-      if (
-        messages[messages.length - 1].content.startsWith(
-          "You focused me on sections",
-        )
-      ) {
-        return JSON.stringify({
-          role: messages[messages.length - 1].role,
-          content: messages[messages.length - 1].content,
-        });
-      }
-      return JSON.stringify({
-        role: message.role,
-        content: message.content,
-      });
-    });
-    setHist(msgs.slice(-4).toString());
+    const recentMessages = messages.slice(-4).map((message) =>
+      JSON.stringify({ role: message.role, content: message.content }),
+    );
+    setHist(recentMessages.join(","));
   };
 
   // Send query to backend API
   const sendQuery = async (query) => {
     const token = localStorage.getItem("token");
-    console.log(hist);
     const res = await fetch(`${VITE_API_BASE_URL}/get_info`, {
       method: "POST",
       headers: {
@@ -689,21 +675,19 @@ const Chat = () => {
                 setSelectFocus(false);
                 setIsFocused(true);
 
+                const focusedSections = currSection.slice().sort().join(", ");
                 const focusedMessage = {
                   id: (Date.now() + 1).toString(),
-                  content: `You focused me on sections **${currSection
-                    .sort()
-                    .toString()}** under category **${currCategory}**.`,
+                  content: `You focused me on sections **${focusedSections}** under category **${currCategory}**.`,
                   role: "assistant",
                   timestamp: new Date(),
                   isQuiz: false,
                 };
-                if (
-                  messages[messages.length - 1].content !==
-                  focusedMessage.content
-                ) {
-                  setMessages((prev) => [...prev, focusedMessage]);
-                }
+                setMessages((prev) =>
+                  prev.some((message) => message.content === focusedMessage.content)
+                    ? prev
+                    : [...prev, focusedMessage],
+                );
               }}
               className="flex-1 text-sm bg-blue-600 hover:bg-blue-700 transition text-white py-1.5 px-4 rounded-xl"
             >
