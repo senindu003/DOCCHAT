@@ -7,6 +7,7 @@ import { Send, Bot, User, Copy, RefreshCw, Download } from "lucide-react";
 import "katex/dist/katex.min.css";
 import { useNavigate } from "react-router-dom";
 import Dialog from "./Dialog";
+import { exportChatPdf } from "../utils/exportChatPdf";
 
 const Chat = () => {
   const navigate = useNavigate();
@@ -34,6 +35,7 @@ const Chat = () => {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
+  const chatExportRef = useRef(null);
   const [userMetaData, setUserMetaData] = useState({});
   const [isNext, setISNext] = useState(false);
   const [currCategory, setCurrCategory] = useState(() => {
@@ -257,6 +259,15 @@ const Chat = () => {
   };
 
   const downloadChatPdf = async () => {
+    try {
+      await exportChatPdf(chatExportRef.current);
+      return true;
+    } catch (error) {
+      console.error("Unable to export chat:", error);
+      setNotice({ title: "Export failed", message: error.message || "Unable to create the PDF." });
+      return false;
+    }
+    if (false) { // Superseded vector exporter; kept out of the runtime bundle during this transition.
     const [{ jsPDF }, { default: autoTable }] = await Promise.all([
       import("jspdf"),
       import("jspdf-autotable"),
@@ -478,6 +489,7 @@ const Chat = () => {
     }
 
     pdf.save(`docchat-${new Date().toISOString().slice(0, 10)}.pdf`);
+    }
   };
 
   const requestClearChat = () => setShowClearDialog(true);
@@ -567,7 +579,7 @@ const Chat = () => {
           <>
             <button type="button" onClick={() => setShowClearDialog(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
             <button type="button" onClick={() => { clearChat(); setShowClearDialog(false); }} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Clear without saving</button>
-            <button type="button" onClick={async () => { await downloadChatPdf(); clearChat(); setShowClearDialog(false); }} className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">Save PDF & clear</button>
+            <button type="button" onClick={async () => { if (await downloadChatPdf()) { clearChat(); setShowClearDialog(false); } }} className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">Save PDF & clear</button>
           </>
         }
       >
@@ -747,7 +759,7 @@ const Chat = () => {
                 className="flex items-center px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition disabled:opacity-50"
               >
                 <Download className="w-4 h-4 mr-1" />
-                Download PDF
+                Export Chat
               </button>
               <button
                 onClick={() => {
@@ -763,7 +775,7 @@ const Chat = () => {
 
         {/* Messages Container */}
         <div className="flex-1 overflow-y-auto bg-white p-4">
-          <div className="space-y-4">
+          <div ref={chatExportRef} className="space-y-4">
             {messages.map((message) => (
               <div
                 key={message.id}
