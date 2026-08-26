@@ -7,6 +7,7 @@ import { Send, Bot, User, Copy, RefreshCw } from "lucide-react";
 import "katex/dist/katex.min.css";
 import { useNavigate } from "react-router-dom";
 import Dialog from "../Dialog";
+import BackButton from "../BackButton";
 
 const TestChat = () => {
   const navigate = useNavigate();
@@ -493,14 +494,9 @@ const TestChat = () => {
                 <RefreshCw className="w-4 h-4" />
                 Clear Chat
               </button>
-              <button
-                onClick={() => {
-                  navigate("/home", { replace: false });
-                }}
-                className="flex items-center px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition"
-              >
-                <span className="text-xl mr-1">&#8656;</span>Return Home
-              </button>
+              <BackButton
+                onClick={() => navigate("/home", { replace: false })}
+              />
             </div>
           </div>
         </div>

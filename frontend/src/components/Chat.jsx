@@ -8,6 +8,7 @@ import "katex/dist/katex.min.css";
 import { useNavigate } from "react-router-dom";
 import Dialog from "./Dialog";
 import { exportChatPdf } from "../utils/exportChatPdf";
+import BackButton from "./BackButton";
 
 const Chat = () => {
   const navigate = useNavigate();
@@ -745,14 +746,9 @@ const Chat = () => {
                 <Download className="w-4 h-4 mr-1" />
                 Export Chat
               </button>
-              <button
-                onClick={() => {
-                  navigate("/home", { replace: false });
-                }}
-                className="flex items-center px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition"
-              >
-                <span className="text-xl mr-1">&#8656;</span>Return Home
-              </button>
+              <BackButton
+                onClick={() => navigate("/home", { replace: false })}
+              />
             </div>
           </div>
         </div>

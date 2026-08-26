@@ -9,6 +9,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { listDocuments, removeDocument } from "../api";
 import Dialog from "./Dialog";
+import BackButton from "./BackButton";
 
 const RemoveDocs = () => {
   const navigate = useNavigate();
@@ -120,12 +121,7 @@ const RemoveDocs = () => {
       </Dialog>
 
       <div className="mx-auto max-w-6xl">
-        <button
-          onClick={() => navigate("/home", { replace: false })}
-          className="mb-4 text-sm font-medium text-gray-700 hover:text-gray-900"
-        >
-          Back to Home
-        </button>
+        <BackButton onClick={() => navigate("/home", { replace: false })} className="mb-4" />
 
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-bold text-gray-800 md:text-3xl">
