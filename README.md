@@ -1,149 +1,134 @@
-# 📚 DocChat
+# DOCCHAT
 
-> **Turn a PDF collection into a focused, searchable conversation.**
+DOCCHAT is a multi-user Retrieval-Augmented Generation (RAG) application for asking grounded questions about your documents. Upload study material or technical documents, organise them by category and section, then chat with the relevant content.
 
-DocChat is a full-stack, multi-tenant Retrieval-Augmented Generation (RAG) application for asking grounded questions about PDF documents. Its React client lets users upload and organise PDFs by category and section, choose the exact material to focus on, and hold a persistent conversation; its FastAPI service extracts text, tables, and images, builds a private vector collection for each user, and generates helpful answers from the most relevant material.
+The project is designed for student notes, research papers, course material, manuals, and other knowledge collections that benefit from focused, private retrieval.
 
-It is designed especially well for learning materials—lecture notes, course packs, research PDFs, manuals, and technical documentation.
+## Features
 
-## Why DocChat
+- Secure sign-up and login with Argon2 password hashing and JWT authentication.
+- Private per-user document collections in Chroma Cloud.
+- Upload up to **3 files at once**: PDF, DOCX, HTML, TXT, and Markdown.
+- Per-file category, section, validation, processing status, and failure feedback.
+- PDF extraction modes:
+  - **Fast** (default) for normal text PDFs.
+  - **High res** for PDFs where images, tables, or layout matter.
+- Automatic extraction for non-PDF file types.
+- Guardrails that reject empty files, documents above 250,000 extracted characters, and documents that would create more than 90 chunks. Content is never silently truncated.
+- Parallel document enrichment with bounded concurrency, batch embeddings, and live upload-job polling.
+- Focused chat by category and section, or search across the full private library.
+- Rich Markdown and math rendering, chat export to PDF, and document removal from both PostgreSQL and Chroma.
+- Optional Tavily web search when the assistant needs current information or links.
 
-- **Chat with your PDFs** using retrieval grounded in the documents you uploaded.
-- **Preserve more than plain text**: the ingestion pipeline processes text, tables, and embedded images.
-- **Keep knowledge organised** with per-document category and section metadata.
-- **Keep user data separated**: every user has an independent Chroma collection and document metadata records.
-- **Ask with focus**: narrow retrieval to a category and one or more sections, or search across the user's complete library.
-- **Use the web only when appropriate**: Gemini can call a Tavily-powered search tool for current information, requested links, or extra context.
-- **Use secure accounts** with Argon2 password hashing and JWT bearer authentication.
-- **Read answers beautifully** with Markdown, GitHub-flavoured tables, and LaTeX math rendering.
-- **Keep the conversation usable** with remembered chat history, scoped focus controls, response copying, and clear-chat actions.
+## Architecture
 
-## How it works
-
-```mermaid
-flowchart LR
-    A[React web client] --> B[Upload PDFs and add metadata]
-    B --> C[FastAPI RAG service]
-    C --> D[Extract text, images, and tables]
-    D --> E[Chunk and enrich content]
-    E --> F[Chroma: per-user vectors]
-    E --> G[Postgres: accounts and raw metadata]
-    A --> H[Ask question with optional focus]
-    H --> C
-    C --> F
-    C --> I[Gemini: grounded answer]
-    I -. "When needed" .-> J[Tavily web search]
-    I --> A
+```text
+React + Vite frontend
+        |
+        | HTTPS / JWT
+        v
+FastAPI backend --> PostgreSQL   (users, upload jobs, extracted metadata)
+        |
+        +--> Chroma Cloud         (per-user vector collections)
+        +--> Google Gemini        (embeddings and answers)
+        +--> DeepSeek             (chunk descriptions during ingestion)
+        `--> Tavily              (optional live web search)
 ```
 
-## Core capabilities
-
-| Capability | What DocChat does |
-| --- | --- |
-| PDF ingestion | Accepts one or more PDF files in a single request, each labelled with a category and section |
-| Document understanding | Uses Unstructured's high-resolution PDF pipeline with table inference and image extraction |
-| Chunking | Chunks content by title with overlap to retain context between sections |
-| Enrichment | Generates detailed, searchable chunk descriptions through DeepSeek-compatible chat completions |
-| Vector retrieval | Uses Gemini embeddings and Chroma MMR or filtered similarity search |
-| Focused questions | Retrieves across all documents or limits retrieval to a category and selected sections |
-| Web augmentation | Lets Gemini call a Tavily search tool when fresh information or links are explicitly needed |
-| Metadata library | Stores extracted text, table HTML, and images with source filename, category, section, and content type |
-| Web experience | Provides account screens, protected pages, drag-and-drop uploads, focused chat, persistent history, and rich answer rendering |
+During ingestion, DOCCHAT extracts document elements, checks document limits, chunks the content, creates searchable descriptions, generates embeddings, and persists the resulting vectors and metadata. A failed file does not fail the rest of the batch.
 
 ## Tech stack
 
-| Area | Technologies |
+| Area | Technology |
 | --- | --- |
-| Frontend | React 19, Vite, React Router, Tailwind CSS, Lucide |
-| Rich chat rendering | React Markdown, GFM, KaTeX, Remark Math |
-| API | FastAPI, Uvicorn, Pydantic |
-| Relational data | SQLAlchemy with PostgreSQL or MySQL |
-| Vector database | Chroma Cloud via `langchain-chroma` |
-| PDF processing | Unstructured, Tesseract OCR, Poppler, libmagic |
-| AI | Google Gemini for embeddings and answers; DeepSeek for ingestion summaries |
-| Search | Tavily, available to Gemini as a function tool |
-| Authentication | JWT (`PyJWT`) and Argon2 (`pwdlib`) |
-| Containerisation | Docker using Python 3.12 slim |
+| Frontend | React 19, Vite, Tailwind CSS, React Router |
+| Backend | FastAPI, SQLAlchemy, Pydantic, Uvicorn |
+| Relational database | PostgreSQL (MySQL is also supported by SQLAlchemy configuration) |
+| Vector database | Chroma Cloud |
+| AI | Google Gemini and DeepSeek |
+| Document parsing | Unstructured, Tesseract OCR, Poppler, libmagic |
+| Authentication | JWT and Argon2 |
+| Deployment | Docker, Railway-compatible |
 
-## Project structure
+## Repository layout
 
 ```text
-DOCCHAT/                         # Backend repository
+.
 ├── backend/
-│   ├── main.py                  # FastAPI application and router registration
+│   ├── main.py                 # FastAPI application
 │   ├── routers/
-│   │   ├── auth.py              # Sign-up, sign-in, JWT and current-user routes
-│   │   ├── set_info.py          # PDF upload, parsing, enrichment, and indexing
-│   │   └── get_info.py          # Retrieval, answering, and web-search tool
-│   └── user_db/
-│       ├── database.py          # SQLAlchemy engine and session dependency
-│       └── models.py            # User and extracted-document metadata models
-├── Dockerfile                   # API image with OCR and PDF system dependencies
-├── .dockerignore
+│   │   ├── auth.py             # Authentication and current-user routes
+│   │   ├── set_info.py         # Upload, extraction, chunking, indexing
+│   │   ├── get_info.py         # Retrieval and answers
+│   │   └── documents.py        # List and remove uploaded documents
+│   └── user_db/                # SQLAlchemy setup and models
+├── frontend/
+│   └── src/                    # React user interface
+├── Dockerfile                  # Backend Docker image
 └── requirements.txt
-
-frontend_/                       # Separate frontend repository/service
-├── src/
-│   ├── components/              # Account, home, upload, and chat pages
-│   └── api.js                   # API base URL and auth helpers
-├── Dockerfile                   # Builds and serves the Vite app
-└── package.json
 ```
 
-## Quick start
+## Document support and limits
 
-### Prerequisites
+| Format | Maximum file size | Extraction strategy |
+| --- | ---: | --- |
+| PDF | 10 MB | Fast (default) or High res |
+| DOCX | 5 MB | Auto |
+| HTML / HTM | 2 MB | Auto |
+| TXT | 2 MB | Auto |
+| Markdown | 2 MB | Auto |
+
+Additional limits: **3 files per batch**, **250,000 extracted characters per file**, **90 chunks per file**, 3,000 characters per chunk, and 200-character overlap.
+
+> For non-PDF documents with images, complex tables, or layout-sensitive content, upload a PDF version for better extraction.
+
+## Prerequisites
 
 - Python 3.12+
-- Node.js 20+ and npm (for the frontend)
-- A PostgreSQL or MySQL database
-- A Chroma Cloud account and database
-- API keys for Google Gemini and DeepSeek
-- A Tavily API key if web-search augmentation is required
+- Node.js 20+ and npm
+- PostgreSQL database
+- Chroma Cloud tenant and database
+- Google AI API key
+- DeepSeek API key
+- Tavily API key (optional, only for web-search augmentation)
 
-> On local machines, PDF processing also needs Tesseract OCR, Poppler, libmagic, and OpenGL/GLib libraries. The supplied Docker image installs these dependencies for you.
+The backend Docker image installs the operating-system dependencies used for PDF extraction. For local, non-Docker PDF processing, install Tesseract, Poppler, and libmagic on your machine.
 
-### 1. Clone and configure
+## Configuration
 
-```bash
-git clone <your-repository-url>
-cd DOCCHAT
-```
-
-Create `.env` in the repository root:
+Create `backend/.env` (or provide the same variables through your deployment platform):
 
 ```env
-# Database: choose PostgreSQL or MySQL
-DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/docchat
-# DATABASE_URL=mysql+pymysql://USER:PASSWORD@localhost:3306/docchat
-
-# Authentication
-SECRET_KEY=replace-with-a-long-random-secret
-
-# AI services
-GOOGLE_API_KEY=your-google-ai-api-key
-DEEPSEEK_API_KEY=your-deepseek-api-key
-TAVILY_API_KEY=your-tavily-api-key
-
-# Chroma Cloud
+# Required
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE
+SECRET_KEY=replace-with-a-long-random-value
+GOOGLE_API_KEY=your-google-ai-key
+DEEPSEEK_API_KEY=your-deepseek-key
 CHROMA_API_KEY=your-chroma-api-key
 CHROMA_TENANT=your-chroma-tenant
 CHROMA_DATABASE=your-chroma-database
+
+# Optional: enables Gemini's web-search tool
+TAVILY_API_KEY=your-tavily-key
+
+# Optional ingestion tuning (defaults shown)
+UPLOAD_FILE_CONCURRENCY=2
+UPLOAD_SUMMARY_CONCURRENCY=3
+UPLOAD_VECTOR_BATCH_SIZE=32
+UPLOAD_SUMMARY_RETRIES=3
 ```
 
-DocChat normalises standard PostgreSQL URLs to SQLAlchemy's `psycopg2` dialect automatically.
-
-In the separate frontend repository, create `.env`:
+Create `frontend/.env`:
 
 ```env
 VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-For deployment, set this value to the public URL of the DocChat backend service. `VITE_` variables are embedded by Vite during the build, so they must be present when the frontend is built.
+For a deployed frontend, use the public HTTPS URL of the backend. Vite embeds `VITE_*` variables at build time, so rebuild the frontend after changing this value.
 
-### 2. Run locally
+## Run locally
 
-Create and activate a virtual environment:
+### Backend
 
 ```bash
 python -m venv .venv
@@ -153,233 +138,87 @@ python -m venv .venv
 
 # macOS / Linux
 source .venv/bin/activate
-```
 
-Install dependencies and start the API from the repository root:
-
-```bash
 pip install -r requirements.txt
-uvicorn backend.main:app --reload
+cd backend
+uvicorn main:app --reload --port 8000
 ```
 
-The API is available at `http://127.0.0.1:8000`. Database tables are created on startup.
+The backend is available at `http://127.0.0.1:8000`.
 
-### 3. Run the frontend
-
-In a second terminal, from the separate frontend repository:
+### Frontend
 
 ```bash
+cd frontend
 npm ci
 npm run dev
 ```
 
-Open `http://localhost:5173`. Sign up or sign in, upload PDFs with a category and section, then open **Chat with Docs** to begin a document-grounded conversation.
+Open `http://localhost:5173`, create an account, upload documents, and select **Chat with Docs**.
 
-### Frontend experience
+## API overview
 
-- **Protected routes** keep `/home`, `/upload`, and `/chat` behind a login token.
-- **Upload portal** accepts multiple PDFs by drag-and-drop or file picker, prevents duplicate filenames, and requires a category and section for each file.
-- **Per-file feedback** shows upload state, progress, successful processing, and failures.
-- **Focused chat** lets a user select one category and one or more sections before asking questions.
-- **Persistent session state** keeps the user, chat messages, and active focus in browser storage.
-- **Readable AI answers** render Markdown, tables, lists, and mathematical notation. Quiz-like responses receive enhanced formatting and can be copied.
-
-## API reference
-
-All protected routes require a bearer token:
+Protected routes require:
 
 ```http
 Authorization: Bearer <access_token>
 ```
 
-| Method | Route | Auth | Purpose |
-| --- | --- | --- | --- |
-| `GET` | `/` | No | Basic health/welcome response |
-| `POST` | `/signup` | No | Create a user account |
-| `POST` | `/login` | No | Receive a JWT access token and the user's metadata map |
-| `GET` | `/users/me/` | Yes | Read the current user profile |
-| `POST` | `/set_info` | Yes | Upload, process, and index PDF files |
-| `GET` | `/uploads/{job_id}` | Yes | Read live per-file upload progress |
-| `POST` | `/get_info` | Yes | Ask a document-grounded question |
-
-### Create an account
-
-`POST /signup`
-
-```json
-{
-  "username": "ada",
-  "firstname": "Ada",
-  "lastname": "Lovelace",
-  "email": "ada@example.com",
-  "password": "use-a-strong-password"
-}
-```
-
-### Signup input rules
-
-Usernames are used as stable identifiers for each user's document collection.
-They must be 3–50 characters long, start and end with a letter or number, and
-may contain only letters, numbers, dots, hyphens, and underscores. Consecutive
-dots are not allowed. Passwords must be 8–128 printable characters; symbols
-are allowed, but control and non-printable characters are rejected.
-
-### Sign in
-
-`POST /login`
-
-```json
-{
-  "username": "ada",
-  "password": "use-a-strong-password"
-}
-```
-
-The response includes `access_token` and a `user_details.meta_data` object mapping each category to its available sections—ideal for populating a focused-chat interface.
-
-### Upload PDFs
-
-`POST /set_info` uses `multipart/form-data`. Send matching, repeated fields for every uploaded document:
-
-| Form field | Type | Description |
+| Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `files` | File (repeatable) | PDF files to process |
-| `categories` | Text (repeatable) | Category for the corresponding file, e.g. `CS3063` |
-| `sections` | Text (repeatable) | Section for the corresponding file, e.g. `Lecture 3` |
+| `GET` | `/` | Service response |
+| `POST` | `/signup` | Create an account |
+| `POST` | `/login` | Receive an access token |
+| `GET` | `/users/me/` | Current user profile |
+| `POST` | `/set_info` | Create a document upload job |
+| `GET` | `/uploads/{job_id}` | Poll per-file upload progress |
+| `POST` | `/get_info` | Ask a grounded question |
+| `GET` | `/documents` | List the user's uploaded documents |
+| `DELETE` | `/documents` | Remove one document's metadata and vectors |
 
-Example:
+### Upload request
+
+`POST /set_info` uses `multipart/form-data`. Repeat `files`, `categories`, `sections`, and `partition_strategies` in matching order:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/set_info \
   -H "Authorization: Bearer <access_token>" \
-  -F "files=@lecture-03.pdf" \
+  -F "files=@lecture.pdf" \
   -F "categories=CS3063" \
-  -F "sections=Lecture 3"
+  -F "sections=Lecture 3" \
+  -F "partition_strategies=fast" \
+  -F "async_mode=true"
 ```
 
-Only PDFs are accepted. Files are checked by extension and, when available, MIME type; the per-file limit is **100 MB**.
+Poll `GET /uploads/{job_id}` until the status is `completed`. File stages are `queued`, `extracting`, `chunking`, `enriching`, `indexing`, `complete`, and `failed`.
 
-### Live upload progress
-
-Send `async_mode=true` with the multipart upload to receive `202 Accepted` and
-a `job_id` immediately. Poll `GET /uploads/{job_id}` with the same bearer
-token. Each result reports a file's `status`, `stage`, `progress`, chunk count,
-and any file-specific error. Stages are `queued`, `extracting`, `chunking`,
-`enriching`, `indexing`, `complete`, and `failed`.
-
-The supplied frontend uses this mode and reports actual upload bytes followed
-by backend processing status; it does not simulate progress.
-
-### Ask a question
-
-`POST /get_info`
-
-```json
-{
-  "query": {
-    "query": "Explain the difference between a process and a thread.",
-    "history": ""
-  },
-  "meta_data": {
-    "category": "CS3063",
-    "sections": ["Lecture 3"]
-  }
-}
-```
-
-Set `category` to an empty string to search the complete document library for the signed-in user. For a focused query, provide both a category and the applicable sections.
-
-## Retrieval and answer behaviour
-
-- **Unfocused search** uses maximal marginal relevance (MMR) to return 10 diverse chunks from the user's private collection.
-- **Focused search** filters Chroma results by `category` and `section` before selecting the closest matching chunks.
-- The answer model receives the retrieved context and supplied conversation history.
-- The assistant is instructed to say it does not know when a question is not supported by the provided context, rather than inventing an answer.
-- The assistant may run Tavily web search when current information, examples, extra information, or web links are explicitly needed.
-
-## Docker
+## Docker and Railway
 
 ### Backend
 
-Build and run the RAG API from the backend repository:
-
 ```bash
 docker build -t docchat-api .
-docker run --env-file .env -p 8080:8080 docchat-api
+docker run --env-file backend/.env -p 8080:8080 docchat-api
 ```
 
-The container installs Tesseract OCR, English language data, Poppler, libmagic, GLib, and OpenGL libraries. It respects a platform-provided `PORT` environment variable and otherwise listens on `8080`.
+The Docker image honours the platform `PORT` variable and otherwise uses port 8080.
 
-### Frontend
+For Railway, deploy three services:
 
-Build and run the frontend from the separate frontend repository. Pass the public backend URL at build time:
+1. **PostgreSQL** — use its provided connection URL as `DATABASE_URL`.
+2. **Backend** — deploy this repository with the root `Dockerfile`; add the backend environment variables above.
+3. **Frontend** — deploy the `frontend/` directory or its image; set `VITE_API_BASE_URL` to the backend's public domain before building.
 
-```bash
-docker build -t docchat-frontend .
-docker run --rm -e VITE_API_BASE_URL=http://host.docker.internal:8080 -p 5173:8080 docchat-frontend
-```
+Generate public domains for the backend and frontend. Users visit the frontend domain; it calls the backend through `VITE_API_BASE_URL`.
 
-The frontend container uses Node 20 Alpine, runs `npm ci`, builds the Vite app at container startup, and serves the resulting single-page application on `PORT` (default `8080`).
+## Production notes
 
-### Upload performance configuration
+- Set a long, unique `SECRET_KEY` and never commit real `.env` files.
+- Restrict CORS to the frontend domain before a public production release; the current development configuration allows all origins.
+- Use one backend replica with the current in-process upload worker. A restart marks active upload jobs as failed because temporary uploaded files do not survive container restarts.
+- Use managed PostgreSQL backups and protect Chroma/API credentials.
+- High-res PDF extraction is CPU and memory intensive. Keep its use limited to PDFs that need table, image, or layout extraction.
 
-The backend processes independent PDFs and LLM chunk descriptions with bounded
-concurrency, while serialising writes to each user's Chroma collection and
-committing each file's relational metadata as one transaction. Tune these
-backend environment variables only after observing Railway memory and API rate
-limits:
+## License
 
-```text
-UPLOAD_FILE_CONCURRENCY=2       # parallel PDF pipelines; use 1 on low-memory plans
-UPLOAD_SUMMARY_CONCURRENCY=3    # total concurrent DeepSeek descriptions
-UPLOAD_VECTOR_BATCH_SIZE=32     # Chroma/Gemini embedding batch size
-UPLOAD_SUMMARY_RETRIES=3        # retries for a transient enrichment failure
-```
-
-Use one backend replica with this in-process worker design. On a service
-restart, unfinished jobs are reported as failed because their temporary upload
-files are no longer available; users can retry the affected file.
-
-## Railway deployment
-
-The Railway deployment is intentionally split into three services:
-
-```mermaid
-flowchart LR
-    U[Browser] --> F[DOCCHAT-Frontend\nReact/Vite container]
-    F -->|VITE_API_BASE_URL| B[DOCCHAT\nFastAPI RAG container]
-    B --> P[Postgres\nRailway database]
-    B --> C[Chroma Cloud]
-    B --> G[Google Gemini]
-    B --> D[DeepSeek]
-    B -. Optional .-> T[Tavily]
-```
-
-1. **Postgres** — create a Railway PostgreSQL service. Copy its connection URL into the backend's `DATABASE_URL` variable.
-2. **DOCCHAT** — deploy the backend repository using its Dockerfile. Add `DATABASE_URL`, `SECRET_KEY`, `GOOGLE_API_KEY`, `DEEPSEEK_API_KEY`, `TAVILY_API_KEY`, `CHROMA_API_KEY`, `CHROMA_TENANT`, and `CHROMA_DATABASE`.
-3. **DOCCHAT-Frontend** — deploy the frontend repository using its Dockerfile. Set `VITE_API_BASE_URL` to the generated public URL of the DOCCHAT backend service, then redeploy the frontend so Vite embeds it in the production build.
-4. Generate public domains for the backend and frontend services. Users should visit the frontend domain; it calls the backend domain through `VITE_API_BASE_URL`.
-
-> Railway provides `PORT` automatically. Both included Dockerfiles honour it. Keep the browser-facing URL and backend API URL separate; the frontend's value is public configuration, so it must never contain secrets.
-
-## Security and deployment checklist
-
-- [ ] Set a long, unique `SECRET_KEY` and keep all `.env` values out of version control.
-- [ ] Configure a managed database with TLS, backups, and least-privilege credentials.
-- [ ] Restrict CORS to your frontend domains before production; the current server configuration permits all origins.
-- [ ] Set the frontend's `VITE_API_BASE_URL` to the backend's HTTPS public domain and redeploy it after any URL change.
-- [ ] Place the API behind HTTPS and use a reverse proxy or platform gateway.
-- [ ] Set upload-size and request-time limits at the gateway; high-resolution PDF extraction is resource intensive.
-- [ ] Add rate limiting, logging/monitoring, migrations, tests, and background-job processing for production workloads.
-- [ ] Review retention and deletion requirements for uploaded educational or sensitive documents.
-
-## Important implementation notes
-
-- A user's Chroma collection is named after their username. Usernames should therefore be treated as stable identifiers.
-- The app stores the original extracted elements—text, HTML tables, and base64 image data—in the relational database alongside their source metadata.
-- PDF extraction is CPU- and memory-intensive. For larger uploads, queue ingestion work or run it through a background worker to avoid holding a web request open.
-- The project currently contains no explicit license file. Add one before offering the project for reuse or contribution.
-
----
-
-**DocChat makes your document library a conversation—not a scavenger hunt.**
+No license has been added yet. Add one before distributing or accepting external contributions.
