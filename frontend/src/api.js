@@ -5,7 +5,9 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 function errorMessage(detail, fallback) {
   if (Array.isArray(detail)) {
-    return detail.map((item) => item.msg).join(" ");
+    return detail
+      .map((item) => (typeof item === "string" ? item : item.msg || fallback))
+      .join(" ");
   }
   return detail || fallback;
 }
@@ -71,7 +73,7 @@ export function createUploadJob(formData, onUploadProgress) {
     request.upload.onprogress = (event) => {
       if (event.lengthComputable) onUploadProgress(Math.round((event.loaded / event.total) * 8));
     };
-    request.onerror = () => reject(new Error("Network error while uploading PDFs"));
+    request.onerror = () => reject(new Error("Network error while uploading documents"));
     request.onload = () => {
       let payload = {};
       try {

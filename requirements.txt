@@ -11,7 +11,7 @@ python-dotenv==1.2.1
 python_magic==0.4.27
 Requests==2.32.5
 SQLAlchemy==2.0.45
-unstructured[pdf]==0.18.21
+unstructured[pdf,docx]==0.18.21
 uvicorn==0.40.0
 PyMySQL==1.1.2
 pwdlib[argon2]==0.3.0

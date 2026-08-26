@@ -5,7 +5,7 @@ from tempfile import NamedTemporaryFile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import BoundedSemaphore, Lock, local
 from time import sleep
-from typing import Annotated, Callable, List
+from typing import Annotated, Callable, List, Optional
 from fastapi import BackgroundTasks, HTTPException, status, APIRouter, File, UploadFile, Depends, Form
 from fastapi.responses import JSONResponse
 from routers.models import User
@@ -22,6 +22,10 @@ import magic
 
 # Unstructured for document parsing
 from unstructured.partition.pdf import partition_pdf
+from unstructured.partition.docx import partition_docx
+from unstructured.partition.html import partition_html
+from unstructured.partition.md import partition_md
+from unstructured.partition.text import partition_text
 from unstructured.chunking.title import chunk_by_title
 
 # LangChain components
@@ -53,7 +57,26 @@ SUMMARY_RETRIES = _positive_int_env("UPLOAD_SUMMARY_RETRIES", 3)
 # small Railway container.  Text PDFs should use ``fast``; opt in to hi_res
 # only when table/image extraction is actually needed.
 PDF_PARTITION_STRATEGY = os.getenv("PDF_PARTITION_STRATEGY", "fast").strip().lower()
-ALLOWED_PARTITION_STRATEGIES = {"fast", "hi_res"}
+PDF_PARTITION_STRATEGIES = {"fast", "hi_res"}
+NON_PDF_PARTITION_STRATEGY = "auto"
+MAX_FILES_PER_UPLOAD = _positive_int_env("UPLOAD_MAX_FILES", 3)
+MAX_EXTRACTED_CHARS = _positive_int_env("UPLOAD_MAX_EXTRACTED_CHARS", 250_000)
+MAX_CHUNKS_PER_FILE = _positive_int_env("UPLOAD_MAX_CHUNKS_PER_FILE", 90)
+CHUNK_MAX_CHARACTERS = _positive_int_env("UPLOAD_CHUNK_MAX_CHARACTERS", 3_000)
+CHUNK_OVERLAP = _positive_int_env("UPLOAD_CHUNK_OVERLAP", 200)
+CHUNK_NEW_AFTER_CHARACTERS = _positive_int_env("UPLOAD_CHUNK_NEW_AFTER_CHARACTERS", 2_500)
+
+# Extension is the primary check because browsers do not consistently report MIME
+# types for local DOCX and Markdown files. Magic is used as an additional guard.
+FILE_TYPE_CONFIG = {
+    ".pdf": {"label": "PDF", "max_bytes": 10 * 1024 * 1024, "strategies": PDF_PARTITION_STRATEGIES},
+    ".docx": {"label": "DOCX", "max_bytes": 5 * 1024 * 1024, "strategies": {NON_PDF_PARTITION_STRATEGY}},
+    ".html": {"label": "HTML", "max_bytes": 2 * 1024 * 1024, "strategies": {NON_PDF_PARTITION_STRATEGY}},
+    ".htm": {"label": "HTML", "max_bytes": 2 * 1024 * 1024, "strategies": {NON_PDF_PARTITION_STRATEGY}},
+    ".txt": {"label": "TXT", "max_bytes": 2 * 1024 * 1024, "strategies": {NON_PDF_PARTITION_STRATEGY}},
+    ".md": {"label": "Markdown", "max_bytes": 2 * 1024 * 1024, "strategies": {NON_PDF_PARTITION_STRATEGY}},
+    ".markdown": {"label": "Markdown", "max_bytes": 2 * 1024 * 1024, "strategies": {NON_PDF_PARTITION_STRATEGY}},
+}
 LLM_SEMAPHORE = BoundedSemaphore(SUMMARY_WORKERS)
 _vector_locks: dict[str, Lock] = {}
 _vector_locks_guard = Lock()
@@ -71,31 +94,43 @@ def _is_retryable_enrichment_error(error: Exception) -> bool:
     return any(marker in message for marker in ("429", "rate limit", "timeout", "timed out", "connection", "500", "502", "503", "504"))
 
 
-def _partition_document(file, strategy: str | None = None):
-    """Use expensive layout extraction only when explicitly requested."""
-    selected_strategy = strategy or PDF_PARTITION_STRATEGY
-    if selected_strategy == "hi_res":
-        return partition_pdf(
-            file=file,
-            strategy="hi_res",
-            infer_table_structure=True,
-            extract_image_block_types=["image"],
-            extract_image_block_to_payload=True,
-        )
-    return partition_pdf(file=file, strategy="fast")
+def _partition_document(file_path: str, filename: str, strategy: str):
+    """Extract supported documents using the strategy valid for their file type."""
+    extension = Path(filename).suffix.lower()
+    if extension == ".pdf":
+        if strategy == "hi_res":
+            return partition_pdf(
+                filename=file_path,
+                strategy="hi_res",
+                infer_table_structure=True,
+                extract_image_block_types=["image"],
+                extract_image_block_to_payload=True,
+            )
+        return partition_pdf(filename=file_path, strategy="fast")
+    if extension == ".docx":
+        return partition_docx(filename=file_path)
+    if extension in {".html", ".htm"}:
+        return partition_html(filename=file_path)
+    if extension == ".txt":
+        return partition_text(filename=file_path)
+    if extension in {".md", ".markdown"}:
+        return partition_md(filename=file_path)
+    raise RuntimeError(f"Unsupported file type: {extension or 'unknown'}")
 
 set_info_router = APIRouter()
 
 def seperate_content_data(chunk):
   content_data = {"text":[], "images":[], "tables": []}
-  for element in chunk.metadata.orig_elements:
-    content_data["text"].append(element.text)
-    if element.category == "Image":
-      content_data["images"].append(element.metadata.image_base64)
-    elif element.category == "Table":
-      content_data["tables"].append(element.metadata.text_as_html)
-    else:
-      pass
+  elements = getattr(chunk.metadata, "orig_elements", None) or [chunk]
+  for element in elements:
+    text = getattr(element, "text", "") or ""
+    if text:
+      content_data["text"].append(text)
+    metadata = getattr(element, "metadata", None)
+    if getattr(element, "category", "") == "Image" and getattr(metadata, "image_base64", None):
+      content_data["images"].append(metadata.image_base64)
+    elif getattr(element, "category", "") == "Table" and getattr(metadata, "text_as_html", None):
+      content_data["tables"].append(metadata.text_as_html)
   return content_data
 
 
@@ -296,8 +331,9 @@ def create_vector_store(langchain_docs, persist_directory, progress_callback: Ca
 
 
 def create_my_rag(file, persist_directory, filename, category, section, progress_callback=None, partition_strategy=None):
-    elements = _partition_document(file, partition_strategy)
-    chunks = chunk_by_title(elements, max_characters=2500, overlap=250, new_after_n_chars=2000, include_orig_elements=True)
+    # Retained for compatibility with older callers. Live uploads use process_single_file.
+    elements = _partition_document(file.name, filename, partition_strategy or PDF_PARTITION_STRATEGY)
+    chunks = chunk_by_title(elements, max_characters=CHUNK_MAX_CHARACTERS, overlap=CHUNK_OVERLAP, new_after_n_chars=CHUNK_NEW_AFTER_CHARACTERS, include_orig_elements=True)
     langchain_docs, original_contents = create_langchain_docs(
         chunks,
         user=persist_directory,
@@ -311,43 +347,44 @@ def create_my_rag(file, persist_directory, filename, category, section, progress
 
 set_info_router = APIRouter()
 
-# Allowed file types
-ALLOWED_EXTENSIONS = {'.pdf'}
-ALLOWED_MIME_TYPES = {
-    'application/pdf',
-}
+def _file_config(filename: str):
+    return FILE_TYPE_CONFIG.get(Path(filename or "").suffix.lower())
 
-def validate_file(file: UploadFile) -> bool:
-    """Validate PDF file type and size"""
-    # Check file extension
-    filename = file.filename.lower()
-    
-    if not filename.endswith('.pdf'):
-        return False
-    
-    # Check MIME type
-    try:
-        # Read first 2048 bytes for MIME detection
-        content = file.file.read(2048)
-        file.file.seek(0)  # Reset file pointer
-        
-        mime_type = magic.from_buffer(content, mime=True)
-        if mime_type != 'application/pdf':
-            return False
-    except:
-        # If MIME detection fails, rely on extension
-        pass
-    
-    # Check file size (max 100MB)
-    file.file.seek(0, 2)  # Seek to end
-    file_size = file.file.tell()
-    file.file.seek(0)  # Reset to beginning
-    
-    MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
-    if file_size > MAX_FILE_SIZE:
-        return False
-    
-    return True
+
+def _file_size(file: UploadFile) -> int:
+    file.file.seek(0, 2)
+    size = file.file.tell()
+    file.file.seek(0)
+    return size
+
+
+def validate_file(file: UploadFile) -> tuple[bool, str]:
+    """Validate extension, reliable file signature, and the per-type size cap."""
+    config = _file_config(file.filename or "")
+    if not config:
+        return False, "Supported formats are PDF, DOCX, HTML, TXT, and Markdown."
+
+    size = _file_size(file)
+    if size == 0:
+        return False, "The file is empty."
+    if size > config["max_bytes"]:
+        return False, f"{config['label']} files are limited to {config['max_bytes'] // (1024 * 1024)} MB."
+
+    # A PDF must have a PDF signature. Other supported text/document formats
+    # legitimately share generic MIME values, so their extension is sufficient.
+    if Path(file.filename).suffix.lower() == ".pdf":
+        try:
+            header = file.file.read(2048)
+            file.file.seek(0)
+            if magic.from_buffer(header, mime=True) != "application/pdf":
+                return False, "The file extension is PDF, but its contents are not a valid PDF."
+        except Exception:
+            file.file.seek(0)
+    return True, ""
+
+
+def _extracted_character_count(elements) -> int:
+    return sum(len(getattr(element, "text", "") or "") for element in elements)
 
 def _vector_lock_for(username: str) -> Lock:
     with _vector_locks_guard:
@@ -393,13 +430,31 @@ def process_single_file(
     doc_ids = []
     try:
         _set_job_file_state(job_file_id, status="processing", stage="extracting", progress=10)
-        with open(file_path, "rb") as file_content:
-            elements = _partition_document(file_content, partition_strategy)
+        elements = _partition_document(file_path, filename, partition_strategy)
+        extracted_characters = _extracted_character_count(elements)
+        if extracted_characters == 0:
+            raise RuntimeError("No extractable text was found in this document.")
+        if extracted_characters > MAX_EXTRACTED_CHARS:
+            raise RuntimeError(
+                f"This document contains {extracted_characters:,} extracted characters, exceeding the "
+                f"{MAX_EXTRACTED_CHARS:,}-character limit. Please split it into smaller documents."
+            )
 
         _set_job_file_state(job_file_id, stage="chunking", progress=25)
-        chunks = chunk_by_title(elements, max_characters=2500, overlap=250, new_after_n_chars=2000, include_orig_elements=True)
+        chunks = chunk_by_title(
+            elements,
+            max_characters=CHUNK_MAX_CHARACTERS,
+            overlap=CHUNK_OVERLAP,
+            new_after_n_chars=CHUNK_NEW_AFTER_CHARACTERS,
+            include_orig_elements=True,
+        )
         if not chunks:
-            raise RuntimeError("No extractable content was found in this PDF.")
+            raise RuntimeError("No usable chunks could be created from this document.")
+        if len(chunks) > MAX_CHUNKS_PER_FILE:
+            raise RuntimeError(
+                f"This document would create {len(chunks)} chunks, exceeding the {MAX_CHUNKS_PER_FILE}-chunk "
+                "limit. Please split it into smaller documents."
+            )
 
         def summary_progress(completed: int, total: int) -> None:
             # Persist roughly twenty progress updates per file, not one database transaction per chunk.
@@ -549,7 +604,7 @@ def process_upload_job(job_id: str, username: str, work_items: list[dict]) -> No
         db.close()
 
     try:
-        with ThreadPoolExecutor(max_workers=min(FILE_WORKERS, len(work_items)), thread_name_prefix="pdf-ingest") as executor:
+        with ThreadPoolExecutor(max_workers=min(FILE_WORKERS, len(work_items)), thread_name_prefix="document-ingest") as executor:
             futures = [
                 executor.submit(
                     process_single_file,
@@ -608,33 +663,47 @@ async def set_info(
     categories: List[str] = Form(...),
     sections: List[str] = Form(...),
     async_mode: bool = Form(False),
-    partition_strategy: str = Form(PDF_PARTITION_STRATEGY),
+    partition_strategies: Optional[List[str]] = Form(None),
+    # Legacy fallback for an already-deployed PDF-only frontend.
+    partition_strategy: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     """Create a persisted upload job. Set ``async_mode=true`` for live progress polling."""
-    partition_strategy = partition_strategy.strip().lower()
-    if partition_strategy not in ALLOWED_PARTITION_STRATEGIES:
-        raise HTTPException(status_code=400, detail="Processing strategy must be 'fast' or 'hi_res'.")
-
     if len(files) != len(categories) or len(files) != len(sections):
         raise HTTPException(status_code=400, detail="Number of files, categories, and sections must match")
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
+    if len(files) > MAX_FILES_PER_UPLOAD:
+        raise HTTPException(status_code=400, detail=f"A maximum of {MAX_FILES_PER_UPLOAD} files can be uploaded at once.")
 
-    invalid = [
-        file.filename
-        for file, category, section in zip(files, categories, sections)
-        if not category.strip() or not section.strip() or not validate_file(file)
-    ]
-    if invalid:
-        raise HTTPException(status_code=400, detail=f"Each upload must be a PDF with a category and section: {', '.join(invalid)}")
+    if partition_strategies is None:
+        fallback = (partition_strategy or PDF_PARTITION_STRATEGY).strip().lower()
+        partition_strategies = [fallback] * len(files)
+    else:
+        partition_strategies = [value.strip().lower() for value in partition_strategies]
+    if len(files) != len(partition_strategies):
+        raise HTTPException(status_code=400, detail="Number of files and processing strategies must match")
+
+    validation_errors = []
+    for file, category, section, strategy in zip(files, categories, sections, partition_strategies):
+        is_valid, error = validate_file(file)
+        config = _file_config(file.filename or "")
+        if not category.strip() or not section.strip():
+            validation_errors.append(f"{file.filename}: category and section are required")
+        elif not is_valid:
+            validation_errors.append(f"{file.filename}: {error}")
+        elif strategy not in config["strategies"]:
+            allowed = " or ".join(sorted(config["strategies"]))
+            validation_errors.append(f"{file.filename}: strategy must be {allowed}")
+    if validation_errors:
+        raise HTTPException(status_code=400, detail=validation_errors)
 
     job_id = str(uuid4())
     job = UploadJob(id=job_id, username=current_user.username, status="queued", total_files=len(files))
     db.add(job)
     work_items = []
     try:
-        for file, category, section in zip(files, categories, sections):
+        for file, category, section, selected_strategy in zip(files, categories, sections, partition_strategies):
             job_file = UploadJobFile(
                 id=str(uuid4()), job_id=job_id, filename=file.filename, category=category.strip(), section=section.strip()
             )
@@ -646,7 +715,7 @@ async def set_info(
                 "filename": file.filename,
                 "category": category.strip(),
                 "section": section.strip(),
-                "partition_strategy": partition_strategy,
+                "partition_strategy": selected_strategy,
             })
     except Exception:
         db.rollback()
@@ -666,7 +735,7 @@ async def set_info(
     db.expire_all()
     result = _job_payload(db.get(UploadJob, job_id), db, include_user_details=True)
     return {
-        "message": f"Processed {result['successful']} out of {result['total_files']} PDF files",
+        "message": f"Processed {result['successful']} out of {result['total_files']} documents",
         **result,
     }
 

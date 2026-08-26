@@ -1,720 +1,161 @@
 import React, { useState } from "react";
-import {
-  X,
-  FileText,
-  CheckCircle,
-  AlertCircle,
-  Loader,
-  File,
-} from "lucide-react";
+import { X, FileText, CheckCircle, AlertCircle, Loader, File } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { createUploadJob, getUploadJob } from "../api";
 import Dialog from "./Dialog";
 
+const MAX_FILES = 3;
+const NON_PDF_TIP = "Tip: If your document includes images, complex tables, or important layout, upload it as a PDF for better extraction.";
+const FILE_TYPES = {
+  pdf: { label: "PDF", maxBytes: 10 * 1024 * 1024, strategy: "fast" },
+  docx: { label: "DOCX", maxBytes: 5 * 1024 * 1024, strategy: "auto" },
+  html: { label: "HTML", maxBytes: 2 * 1024 * 1024, strategy: "auto" },
+  htm: { label: "HTML", maxBytes: 2 * 1024 * 1024, strategy: "auto" },
+  txt: { label: "TXT", maxBytes: 2 * 1024 * 1024, strategy: "auto" },
+  md: { label: "Markdown", maxBytes: 2 * 1024 * 1024, strategy: "auto" },
+  markdown: { label: "Markdown", maxBytes: 2 * 1024 * 1024, strategy: "auto" },
+};
+const ACCEPTED_FILES = ".pdf,.docx,.html,.htm,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/html,text/plain,text/markdown";
+
+function fileExtension(fileName) {
+  return fileName.split(".").pop()?.toLowerCase() || "";
+}
+
+function formatSize(bytes) {
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
 const UploadDocs = () => {
   const navigate = useNavigate();
-
   const [files, setFiles] = useState([]);
   const [dragging, setDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState(null); // null, 'success', 'error'
+  const [uploadStatus, setUploadStatus] = useState(null);
   const [uploadMessage, setUploadMessage] = useState("");
-  const [partitionStrategy, setPartitionStrategy] = useState("fast");
   const [notice, setNotice] = useState(null);
 
-  const onDrop = (event) => {
-    event.preventDefault();
-    setDragging(false);
-
-    const droppedFiles = Array.from(event.dataTransfer.files);
-    addFiles(droppedFiles);
-  };
-
-  const onDragOver = (event) => {
-    event.preventDefault();
-    setDragging(true);
-  };
-
-  const onDragLeave = (event) => {
-    event.preventDefault();
-    setDragging(false);
-  };
-
   const addFiles = (fileList) => {
-    // Filter only PDF files
-    const pdfFiles = fileList.filter(
-      (file) =>
-        file.type === "application/pdf" ||
-        file.name.toLowerCase().endsWith(".pdf"),
-    );
-
-    // Filter out duplicates
-    const existingFilenames = new Set(files.map((f) => f.name));
-    const newFiles = pdfFiles
-      .filter((file) => !existingFilenames.has(file.name))
-      .map((file) => ({
-        id: `${file.name}-${Date.now()}-${Math.random()}`,
-        name: file.name,
-        size: `${(file.size / 1024).toFixed(1)} KB`,
-        type: "PDF",
-        category: "",
-        section: "",
-        file: file,
-        status: "pending", // pending, uploading, uploaded, error
-        stage: "Waiting to upload",
-        progress: 0,
-        error: "",
-      }));
-
-    if (newFiles.length > 0) {
-      setFiles((prev) => [...prev, ...newFiles]);
+    const existingNames = new Set(files.map((file) => file.name));
+    const remainingSlots = MAX_FILES - files.length;
+    const accepted = [];
+    const problems = [];
+    for (const file of fileList) {
+      const extension = fileExtension(file.name);
+      const config = FILE_TYPES[extension];
+      if (!config) problems.push(`${file.name}: unsupported format`);
+      else if (file.size === 0) problems.push(`${file.name}: file is empty`);
+      else if (file.size > config.maxBytes) problems.push(`${file.name}: ${config.label} files are limited to ${config.maxBytes / (1024 * 1024)} MB`);
+      else if (existingNames.has(file.name) || accepted.some((item) => item.name === file.name)) problems.push(`${file.name}: already selected`);
+      else if (accepted.length >= remainingSlots) problems.push(`${file.name}: only ${MAX_FILES} files can be uploaded at once`);
+      else accepted.push({ id: `${file.name}-${Date.now()}-${Math.random()}`, name: file.name, size: formatSize(file.size), bytes: file.size, type: config.label, isPdf: extension === "pdf", strategy: config.strategy, category: "", section: "", file, status: "pending", stage: "Waiting to upload", progress: 0, error: "" });
+    }
+    if (accepted.length) {
+      setFiles((previous) => [...previous, ...accepted]);
       setUploadStatus(null);
       setUploadMessage("");
     }
-
-    // If there were non-PDF files, show warning
-    const nonPdfFiles = fileList.filter(
-      (file) =>
-        !(
-          file.type === "application/pdf" ||
-          file.name.toLowerCase().endsWith(".pdf")
-        ),
-    );
-
-    if (nonPdfFiles.length > 0) {
-      const nonPdfNames = nonPdfFiles.map((f) => f.name).join(", ");
-      setNotice(`Only PDF files are allowed. Skipped: ${nonPdfNames}`);
-    }
+    if (problems.length) setNotice(problems.join("\n"));
   };
 
-  const handleFileInput = (event) => {
-    addFiles(Array.from(event.target.files));
-    event.target.value = null; // Reset input
-  };
-
-  const updateFileInfo = (id, field, value) => {
-    setFiles((prev) =>
-      prev.map((file) => (file.id === id ? { ...file, [field]: value } : file)),
-    );
-  };
-
-  const removeFile = (id) => {
-    setFiles((prev) => prev.filter((file) => file.id !== id));
-    setUploadStatus(null);
-    setUploadMessage("");
-  };
-
-  const clearAllFiles = () => {
-    setFiles([]);
-    setUploadStatus(null);
-    setUploadMessage("");
-    setUploadProgress(0);
-  };
+  const updateFileInfo = (id, field, value) => setFiles((previous) => previous.map((file) => file.id === id ? { ...file, [field]: value } : file));
+  const removeFile = (id) => { setFiles((previous) => previous.filter((file) => file.id !== id)); setUploadStatus(null); setUploadMessage(""); };
+  const clearAllFiles = () => { setFiles([]); setUploadStatus(null); setUploadMessage(""); setUploadProgress(0); };
 
   const validateFiles = () => {
-    // Check if all files have category and section
-    const invalidFiles = files.filter(
-      (f) => !f.category.trim() || !f.section.trim(),
-    );
-
-    if (invalidFiles.length > 0) {
-      const fileNames = invalidFiles.map((f) => f.name).join(", ");
+    const invalid = files.filter((file) => !file.category.trim() || !file.section.trim());
+    if (invalid.length) {
       setUploadStatus("error");
-      setUploadMessage(
-        `Please fill in both Category and Section for: ${fileNames}`,
-      );
+      setUploadMessage(`Please fill in both Category and Section for: ${invalid.map((file) => file.name).join(", ")}`);
       return false;
     }
-
-    // Check if all files are ready (not uploaded already)
-    const readyFiles = files.filter((f) => f.status !== "uploaded");
-    if (readyFiles.length === 0) {
+    if (!files.some((file) => file.status !== "uploaded")) {
       setUploadStatus("error");
-      setUploadMessage("All files have already been uploaded");
+      setUploadMessage("All selected files have already been uploaded.");
       return false;
     }
-
     return true;
   };
 
-  const isUploadDisabled = () => {
-    // Disable upload if:
-    // 1. No files
-    // 2. Currently uploading
-    // 3. All files already uploaded
-    // 4. Any file missing category or section
-    if (files.length === 0 || isUploading) return true;
-
-    const hasIncompleteFields = files.some(
-      (f) => !f.category.trim() || !f.section.trim(),
-    );
-    const allUploaded = files.every((f) => f.status === "uploaded");
-
-    return hasIncompleteFields || allUploaded;
-  };
+  const isUploadDisabled = () => files.length === 0 || isUploading || files.every((file) => file.status === "uploaded") || files.some((file) => !file.category.trim() || !file.section.trim());
 
   const handleUpload = async () => {
-    // Validation
     if (!validateFiles()) return;
-
-    setIsUploading(true);
-    setUploadProgress(0);
-    setUploadStatus(null);
-    setUploadMessage("Starting upload...");
-
-    // Update file statuses only for non-uploaded files
-    setFiles((prev) =>
-      prev.map((f) =>
-        f.status !== "uploaded" ? { ...f, status: "uploading" } : f,
-      ),
-    );
-
+    const filesToUpload = files.filter((file) => file.status !== "uploaded");
+    const hasHighResolutionPdf = filesToUpload.some((file) => file.strategy === "hi_res");
+    setIsUploading(true); setUploadProgress(0); setUploadStatus(null); setUploadMessage("Starting upload...");
+    setFiles((previous) => previous.map((file) => file.status !== "uploaded" ? { ...file, status: "uploading", stage: "Uploading", progress: 0, error: "" } : file));
     const formData = new FormData();
-
-    // Only include files that aren't already uploaded
-    const filesToUpload = files.filter((f) => f.status !== "uploaded");
-
     filesToUpload.forEach((fileInfo) => {
       formData.append("files", fileInfo.file);
       formData.append("categories", fileInfo.category.trim());
       formData.append("sections", fileInfo.section.trim());
+      formData.append("partition_strategies", fileInfo.strategy);
     });
-    formData.append("partition_strategy", partitionStrategy);
-
+    formData.append("async_mode", "true");
     try {
-      formData.append("async_mode", "true");
-      const job = await createUploadJob(formData, (progress) => {
-        setUploadProgress(progress);
-        setUploadMessage("Uploading PDFs to the server…");
-      });
-
+      const job = await createUploadJob(formData, (progress) => { setUploadProgress(progress); setUploadMessage("Uploading documents to the server..."); });
       let result = job;
-      const pollingStartedAt = Date.now();
-      const maxPollingMinutes = partitionStrategy === "hi_res" ? 30 : 15;
-      const maxPollingMs = maxPollingMinutes * 60 * 1000;
+      const startedAt = Date.now();
+      const maxPollingMinutes = hasHighResolutionPdf ? 30 : 15;
       while (result.status === "queued" || result.status === "processing") {
-        if (Date.now() - pollingStartedAt >= maxPollingMs) {
-          throw new Error(
-            `Processing took longer than ${maxPollingMinutes} minutes. The upload has stopped being monitored; please retry the file or contact support.`,
-          );
-        }
+        if (Date.now() - startedAt >= maxPollingMinutes * 60 * 1000) throw new Error(`Processing took longer than ${maxPollingMinutes} minutes. Check the upload status or retry the affected file.`);
         await new Promise((resolve) => setTimeout(resolve, 1000));
         result = await getUploadJob(job.job_id);
-        const averageProgress = result.results.length
-          ? result.results.reduce((total, item) => total + item.progress, 0) /
-            result.results.length
-          : 0;
-        setUploadProgress(Math.max(8, averageProgress));
-        setUploadMessage("Processing documents on the server…");
-        setFiles((prev) =>
-          prev.map((file) => {
-            const fileResult = result.results?.find(
-              (r) => r.filename === file.name,
-            );
-            if (fileResult) {
-              return {
-                ...file,
-                status:
-                  fileResult.status === "processed"
-                    ? "uploaded"
-                    : fileResult.status === "failed"
-                      ? "error"
-                      : "uploading",
-                stage: fileResult.stage,
-                progress: fileResult.progress,
-                error: fileResult.error || "",
-              };
-            }
-            return file;
-          }),
-        );
+        const average = result.results?.length ? result.results.reduce((total, item) => total + item.progress, 0) / result.results.length : 0;
+        setUploadProgress(Math.max(8, average));
+        setUploadMessage("Processing documents on the server...");
+        setFiles((previous) => previous.map((file) => {
+          const item = result.results?.find((candidate) => candidate.filename === file.name);
+          return !item ? file : { ...file, status: item.status === "processed" ? "uploaded" : item.status === "failed" ? "error" : "uploading", stage: item.stage, progress: item.progress, error: item.error || "" };
+        }));
       }
-
-      if (result.user_details)
-        localStorage.setItem(
-          "userDetails",
-          JSON.stringify(result.user_details),
-        );
+      if (result.user_details) localStorage.setItem("userDetails", JSON.stringify(result.user_details));
+      const successCount = result.results?.filter((item) => item.status === "processed").length || 0;
+      const failedCount = result.results?.filter((item) => item.status === "failed").length || 0;
       setUploadProgress(100);
-      setFiles((prev) =>
-        prev.map((file) => {
-          const fileResult = result.results?.find(
-            (item) => item.filename === file.name,
-          );
-          return fileResult
-            ? {
-                ...file,
-                status:
-                  fileResult.status === "processed" ? "uploaded" : "error",
-                stage: fileResult.stage,
-                progress: fileResult.progress,
-                error: fileResult.error || "",
-              }
-            : file;
-        }),
-      );
-
-      // Count results
-      const successCount = result.results
-        ? result.results.filter((r) => r.status === "processed").length
-        : filesToUpload.length;
-      const failedCount = result.results
-        ? result.results.filter((r) => r.status === "failed").length
-        : 0;
-
-      setUploadStatus(failedCount > 0 ? "error" : "success");
-      setUploadMessage(
-        `✅ Successfully processed ${successCount} PDF file${
-          successCount !== 1 ? "s" : ""
-        }${failedCount > 0 ? ` (${failedCount} failed)` : ""}`,
-      );
-
-      // Auto-clear after 3 seconds if all successful
-      if (failedCount === 0) {
-        setTimeout(() => {
-          setFiles([]);
-          setUploadProgress(0);
-          setIsUploading(false);
-        }, 3000);
-      } else {
-        setIsUploading(false);
-      }
+      setFiles((previous) => previous.map((file) => {
+        const item = result.results?.find((candidate) => candidate.filename === file.name);
+        return item ? { ...file, status: item.status === "processed" ? "uploaded" : "error", stage: item.stage, progress: item.progress, error: item.error || "" } : file;
+      }));
+      setUploadStatus(failedCount ? "error" : "success");
+      setUploadMessage(`Successfully processed ${successCount} document${successCount === 1 ? "" : "s"}${failedCount ? ` (${failedCount} failed)` : ""}.`);
     } catch (error) {
-      setUploadProgress(0);
-      setIsUploading(false);
-      setUploadStatus("error");
-      setUploadMessage(`❌ Upload failed: ${error.message}`);
-
-      // Mark uploading files as error
-      setFiles((prev) =>
-        prev.map((f) =>
-          f.status === "uploading" ? { ...f, status: "error" } : f,
-        ),
-      );
-
-      console.error("Upload error:", error);
-    }
+      setUploadProgress(0); setUploadStatus("error"); setUploadMessage(`Upload failed: ${error.message}`);
+      setFiles((previous) => previous.map((file) => file.status === "uploading" ? { ...file, status: "error", error: error.message } : file));
+    } finally { setIsUploading(false); }
   };
 
-  // Calculate stats
-  const pendingCount = files.filter((f) => f.status === "pending").length;
-  const uploadingCount = files.filter((f) => f.status === "uploading").length;
-  const uploadedCount = files.filter((f) => f.status === "uploaded").length;
-  const errorCount = files.filter((f) => f.status === "error").length;
+  const pendingCount = files.filter((file) => file.status === "pending").length;
+  const uploadingCount = files.filter((file) => file.status === "uploading").length;
+  const uploadedCount = files.filter((file) => file.status === "uploaded").length;
+  const errorCount = files.filter((file) => file.status === "error").length;
+  const allFieldsFilled = files.length > 0 && files.every((file) => file.category.trim() && file.section.trim());
 
-  // Check if all required fields are filled
-  const allFieldsFilled =
-    files.length > 0 &&
-    files.every((f) => f.category.trim() && f.section.trim());
-
-  return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
-      <Dialog
-        open={Boolean(notice)}
-        title="Unsupported files"
-        onClose={() => setNotice(null)}
-      >
-        {notice}
-      </Dialog>
-      <div className="max-w-6xl mx-auto">
-        <button
-          onClick={() => {
-            navigate("/home", { replace: false });
-          }}
-          className="text-4xl cursor-pointer"
-        >
-          🔙
-        </button>
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-6 md:mb-8 text-center">
-          PDF Document Upload Portal
-        </h1>
-
-        {/* Drag & Drop Area */}
-        <div
-          className={`border-2 border-dashed rounded-2xl p-8 md:p-12 text-center mb-6 md:mb-8 transition-all ${
-            dragging
-              ? "border-blue-500 bg-blue-50"
-              : "border-gray-300 hover:border-blue-400 hover:bg-gray-50"
-          } ${files.length > 0 ? "mb-4" : ""}`}
-          onDrop={onDrop}
-          onDragOver={onDragOver}
-          onDragLeave={onDragLeave}
-        >
-          <File className="w-12 h-12 md:w-16 md:h-16 mx-auto mb-4 text-gray-400" />
-          <p className="text-base md:text-lg text-gray-600 mb-2">
-            Drag & drop your PDF files here
-          </p>
-          <p className="text-gray-500 mb-4 md:mb-6">or</p>
-          <label className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg cursor-pointer transition text-sm md:text-base">
-            Browse PDF Files
-            <input
-              type="file"
-              multiple
-              accept=".pdf,application/pdf"
-              className="hidden"
-              onChange={handleFileInput}
-              disabled={isUploading}
-            />
-          </label>
-          <p className="text-sm text-gray-500 mt-4">
-            Only PDF files are accepted (max 100MB each)
-          </p>
-        </div>
-
-        {/* Upload Progress Bar */}
-        {isUploading && (
-          <div className="bg-white rounded-xl shadow p-4 md:p-6 mb-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-gray-800">
-                Uploading PDF Files
-              </h3>
-              <span className="text-sm text-gray-600">
-                {uploadProgress.toFixed(0)}%
-              </span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2.5">
-              <div
-                className="bg-green-600 h-2.5 rounded-full transition-all duration-300"
-                style={{ width: `${uploadProgress}%` }}
-              ></div>
-            </div>
-            <p className="text-sm text-gray-600 mt-2">{uploadMessage}</p>
-          </div>
-        )}
-
-        <div className="bg-white rounded-xl shadow p-4 md:p-6 mb-6">
-          <label
-            htmlFor="partition-strategy"
-            className="block font-semibold text-gray-800"
-          >
-            PDF processing strategy
-          </label>
-          <select
-            id="partition-strategy"
-            value={partitionStrategy}
-            onChange={(event) => setPartitionStrategy(event.target.value)}
-            disabled={isUploading}
-            className="mt-2 w-full md:w-auto px-3 py-2 border border-gray-300 rounded-lg bg-white disabled:bg-gray-100"
-          >
-            <option value="fast">Fast - best for normal text PDFs</option>
-            <option value="hi_res" disabled>
-              High resolution - PDFs contain tables and images (slower)
-            </option>
-          </select>
-          <p className="text-sm text-gray-600 mt-2">
-            Choose High resolution only when the PDF needs layout, image, or
-            table extraction. It uses substantially more time and memory.
-          </p>
-        </div>
-
-        {/* Upload Status Summary */}
-        {files.length > 0 && !isUploading && (
-          <div className="bg-white rounded-xl shadow p-4 md:p-6 mb-6">
-            <div className="flex flex-wrap justify-between items-center mb-4">
-              <div>
-                <h2 className="text-lg md:text-xl font-semibold text-gray-800">
-                  Selected PDF Files ({files.length})
-                </h2>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {pendingCount > 0 && (
-                    <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-xs">
-                      {pendingCount} pending
-                    </span>
-                  )}
-                  {uploadingCount > 0 && (
-                    <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
-                      {uploadingCount} uploading
-                    </span>
-                  )}
-                  {uploadedCount > 0 && (
-                    <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
-                      {uploadedCount} uploaded
-                    </span>
-                  )}
-                  {errorCount > 0 && (
-                    <span className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs">
-                      {errorCount} failed
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="flex gap-2 mt-2 md:mt-0">
-                {files.length > 0 && !isUploading && (
-                  <button
-                    onClick={clearAllFiles}
-                    className="px-3 py-2 text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition"
-                  >
-                    Clear All
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Files List */}
-            <div className="space-y-3 max-h-100 overflow-y-auto pr-2">
-              {files.map((file) => (
-                <div
-                  key={file.id}
-                  className={`flex flex-col md:flex-row md:items-center gap-3 md:gap-4 p-3 md:p-4 border rounded-lg ${
-                    file.status === "uploaded"
-                      ? "border-green-200 bg-green-50"
-                      : file.status === "error"
-                        ? "border-red-200 bg-red-50"
-                        : file.status === "uploading"
-                          ? "border-blue-200 bg-blue-50"
-                          : "border-gray-200"
-                  } ${
-                    !file.category.trim() || !file.section.trim()
-                      ? "border-yellow-300 bg-yellow-50"
-                      : ""
-                  }`}
-                >
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="relative">
-                      <FileText className="w-6 h-6 md:w-8 md:h-8 text-blue-500 shrink-0" />
-                      {file.status === "uploaded" && (
-                        <CheckCircle className="w-4 h-4 text-green-500 absolute -top-1 -right-1" />
-                      )}
-                      {file.status === "error" && (
-                        <AlertCircle className="w-4 h-4 text-red-500 absolute -top-1 -right-1" />
-                      )}
-                      {file.status === "uploading" && (
-                        <Loader className="w-4 h-4 text-blue-500 absolute -top-1 -right-1 animate-spin" />
-                      )}
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-800 truncate">
-                        {file.name}
-                      </p>
-                      <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <span>{file.size}</span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1">
-                          <File className="w-3 h-3" />
-                          {file.type}
-                        </span>
-                      </div>
-                      {file.status === "uploading" && (
-                        <p className="text-xs text-blue-700 mt-1">
-                          {file.stage || "Processing"} ·{" "}
-                          {Math.round(file.progress || 0)}%
-                        </p>
-                      )}
-                      {file.status === "error" && file.error && (
-                        <p className="text-xs text-red-700 mt-1 break-words">
-                          {file.error}
-                        </p>
-                      )}
-                      {(!file.category.trim() || !file.section.trim()) && (
-                        <p className="text-xs text-yellow-600 mt-1">
-                          ⚠️ Please fill in both fields below
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col md:flex-row gap-3 md:gap-4 shrink-0">
-                    <div className="flex-1">
-                      <input
-                        type="text"
-                        placeholder="Category *"
-                        className={`w-full px-3 py-2 border rounded text-sm ${
-                          !file.category.trim()
-                            ? "border-yellow-500 bg-yellow-50"
-                            : "border-gray-300"
-                        } disabled:bg-gray-100 disabled:cursor-not-allowed`}
-                        value={file.category}
-                        onChange={(e) =>
-                          updateFileInfo(file.id, "category", e.target.value)
-                        }
-                        disabled={
-                          file.status === "uploading" ||
-                          file.status === "uploaded"
-                        }
-                        required
-                      />
-                    </div>
-
-                    <div className="flex-1">
-                      <input
-                        type="text"
-                        placeholder="Section *"
-                        className={`w-full px-3 py-2 border rounded text-sm ${
-                          !file.section.trim()
-                            ? "border-yellow-500 bg-yellow-50"
-                            : "border-gray-300"
-                        } disabled:bg-gray-100 disabled:cursor-not-allowed`}
-                        value={file.section}
-                        onChange={(e) =>
-                          updateFileInfo(file.id, "section", e.target.value)
-                        }
-                        disabled={
-                          file.status === "uploading" ||
-                          file.status === "uploaded"
-                        }
-                        required
-                      />
-                    </div>
-
-                    <button
-                      onClick={() => removeFile(file.id)}
-                      className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded self-start md:self-center"
-                      disabled={file.status === "uploading"}
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Upload Status Message */}
-            {uploadStatus && (
-              <div
-                className={`mt-4 p-3 rounded-lg ${
-                  uploadStatus === "success"
-                    ? "bg-green-50 border border-green-200"
-                    : "bg-red-50 border border-red-200"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  {uploadStatus === "success" ? (
-                    <CheckCircle className="w-5 h-5 text-green-500" />
-                  ) : (
-                    <AlertCircle className="w-5 h-5 text-red-500" />
-                  )}
-                  <p
-                    className={`text-sm ${
-                      uploadStatus === "success"
-                        ? "text-green-700"
-                        : "text-red-700"
-                    }`}
-                  >
-                    {uploadMessage}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Upload Button */}
-            <div className="mt-6 pt-6 border-t">
-              <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
-                <div className="text-sm text-gray-600">
-                  {files.length} PDF file{files.length !== 1 ? "s" : ""}{" "}
-                  selected • Total:{" "}
-                  {files
-                    .reduce((acc, f) => acc + parseFloat(f.size), 0)
-                    .toFixed(1)}{" "}
-                  KB
-                  {!allFieldsFilled && (
-                    <span className="text-yellow-600 ml-2">
-                      (Please fill all required fields)
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex gap-3">
-                  {errorCount > 0 && !isUploading && (
-                    <button
-                      onClick={handleUpload}
-                      className="px-6 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg font-medium transition"
-                      disabled={!allFieldsFilled}
-                    >
-                      Retry Failed ({errorCount})
-                    </button>
-                  )}
-
-                  <button
-                    onClick={handleUpload}
-                    disabled={isUploadDisabled()}
-                    className={`px-6 py-2 rounded-lg font-medium transition ${
-                      !isUploadDisabled()
-                        ? "bg-green-600 hover:bg-green-700 text-white"
-                        : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                    }`}
-                    title={
-                      isUploadDisabled()
-                        ? files.length === 0
-                          ? "No files to upload"
-                          : !allFieldsFilled
-                            ? "Please fill in all Category and Section fields"
-                            : "All files already uploaded"
-                        : "Upload PDF files"
-                    }
-                  >
-                    {isUploading ? (
-                      <span className="flex items-center gap-2">
-                        <Loader className="w-4 h-4 animate-spin" />
-                        Uploading...
-                      </span>
-                    ) : files.every((f) => f.status === "uploaded") ? (
-                      "All PDFs Uploaded"
-                    ) : (
-                      `Upload ${
-                        files.filter((f) => f.status !== "uploaded").length
-                      } PDF${
-                        files.filter((f) => f.status !== "uploaded").length !==
-                        1
-                          ? "s"
-                          : ""
-                      }`
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Help Text */}
-        {files.length === 0 && !isUploading && (
-          <div className="bg-white rounded-xl shadow p-6 text-center">
-            <div className="max-w-md mx-auto">
-              <h3 className="font-semibold text-gray-800 mb-2">
-                How to upload PDF documents
-              </h3>
-              <ol className="text-sm text-gray-600 text-left space-y-2">
-                <li className="flex items-start gap-2">
-                  <span className="bg-blue-100 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center text-xs">
-                    1
-                  </span>
-                  <span>Drag & drop PDF files or click "Browse PDF Files"</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="bg-blue-100 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center text-xs">
-                    2
-                  </span>
-                  <span>
-                    <strong>Required:</strong> Add Category (e.g., CS3063) and
-                    Section (e.g., Lecture 3) for each PDF
-                  </span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="bg-blue-100 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center text-xs">
-                    3
-                  </span>
-                  <span>
-                    Click "Upload" to process PDFs for your RAG system
-                  </span>
-                </li>
-                <li className="flex items-start gap-2 mt-4">
-                  <span className="bg-yellow-100 text-yellow-800 rounded-full w-5 h-5 flex items-center justify-center text-xs">
-                    !
-                  </span>
-                  <span className="text-yellow-700 font-medium">
-                    Only PDF files are accepted. Upload will be disabled until
-                    all Category and Section fields are filled.
-                  </span>
-                </li>
-              </ol>
-            </div>
-          </div>
-        )}
+  return <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+    <Dialog open={Boolean(notice)} title="File selection" onClose={() => setNotice(null)}><p className="whitespace-pre-line">{notice}</p></Dialog>
+    <div className="max-w-6xl mx-auto">
+      <button onClick={() => navigate("/home")} className="text-3xl" aria-label="Back to home">←</button>
+      <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-6 md:mb-8 text-center">Document Upload Portal</h1>
+      <div className={`border-2 border-dashed rounded-2xl p-8 md:p-12 text-center mb-6 transition-all ${dragging ? "border-blue-500 bg-blue-50" : "border-gray-300 hover:border-blue-400 hover:bg-gray-50"}`} onDrop={(event) => { event.preventDefault(); setDragging(false); addFiles(Array.from(event.dataTransfer.files)); }} onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}>
+        <File className="w-12 h-12 md:w-16 md:h-16 mx-auto mb-4 text-gray-400" /><p className="text-base md:text-lg text-gray-600 mb-2">Drag & drop your documents here</p><p className="text-gray-500 mb-4">or</p>
+        <label className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg cursor-pointer transition">Browse Documents<input type="file" multiple accept={ACCEPTED_FILES} className="hidden" onChange={(event) => { addFiles(Array.from(event.target.files)); event.target.value = null; }} disabled={isUploading} /></label>
+        <p className="text-sm text-gray-500 mt-4">PDF up to 10 MB, DOCX up to 5 MB, HTML/TXT/Markdown up to 2 MB. Maximum {MAX_FILES} files per upload.</p>
       </div>
+      {isUploading && <div className="bg-white rounded-xl shadow p-4 md:p-6 mb-6"><div className="flex items-center justify-between mb-2"><h3 className="font-semibold text-gray-800">Uploading Documents</h3><span className="text-sm text-gray-600">{uploadProgress.toFixed(0)}%</span></div><div className="w-full bg-gray-200 rounded-full h-2.5"><div className="bg-green-600 h-2.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} /></div><p className="text-sm text-gray-600 mt-2">{uploadMessage}</p></div>}
+      {files.length > 0 && <div className="bg-white rounded-xl shadow p-4 md:p-6 mb-6">
+        <div className="flex flex-wrap justify-between items-center mb-4"><div><h2 className="text-lg md:text-xl font-semibold text-gray-800">Selected Documents ({files.length}/{MAX_FILES})</h2><div className="flex flex-wrap gap-2 mt-2">{pendingCount > 0 && <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-xs">{pendingCount} pending</span>}{uploadingCount > 0 && <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">{uploadingCount} processing</span>}{uploadedCount > 0 && <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">{uploadedCount} uploaded</span>}{errorCount > 0 && <span className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs">{errorCount} failed</span>}</div></div>{!isUploading && <button onClick={clearAllFiles} className="px-3 py-2 text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition">Clear All</button>}</div>
+        <div className="space-y-3 max-h-100 overflow-y-auto pr-2">{files.map((file) => <div key={file.id} className={`p-3 md:p-4 border rounded-lg ${file.status === "uploaded" ? "border-green-200 bg-green-50" : file.status === "error" ? "border-red-200 bg-red-50" : file.status === "uploading" ? "border-blue-200 bg-blue-50" : "border-gray-200"}`}>
+          <div className="flex items-start gap-3"><div className="relative"><FileText className="w-7 h-7 text-blue-500" />{file.status === "uploaded" && <CheckCircle className="w-4 h-4 text-green-500 absolute -top-1 -right-1" />}{file.status === "error" && <AlertCircle className="w-4 h-4 text-red-500 absolute -top-1 -right-1" />}{file.status === "uploading" && <Loader className="w-4 h-4 text-blue-500 absolute -top-1 -right-1 animate-spin" />}</div><div className="flex-1 min-w-0"><p className="font-medium text-gray-800 truncate">{file.name}</p><p className="text-sm text-gray-500">{file.size} · {file.type}</p>{file.status === "uploading" && <p className="text-xs text-blue-700 mt-1">{file.stage || "Processing"} · {Math.round(file.progress || 0)}%</p>}{file.status === "error" && file.error && <p className="text-xs text-red-700 mt-1 break-words">{file.error}</p>}</div><button onClick={() => removeFile(file.id)} disabled={file.status === "uploading"} className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded disabled:opacity-40" aria-label={`Remove ${file.name}`}><X className="w-5 h-5" /></button></div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3"><input type="text" placeholder="Category *" value={file.category} onChange={(event) => updateFileInfo(file.id, "category", event.target.value)} disabled={file.status === "uploading" || file.status === "uploaded"} className="w-full px-3 py-2 border border-gray-300 rounded text-sm disabled:bg-gray-100" /><input type="text" placeholder="Section *" value={file.section} onChange={(event) => updateFileInfo(file.id, "section", event.target.value)} disabled={file.status === "uploading" || file.status === "uploaded"} className="w-full px-3 py-2 border border-gray-300 rounded text-sm disabled:bg-gray-100" />{file.isPdf ? <select value={file.strategy} onChange={(event) => updateFileInfo(file.id, "strategy", event.target.value)} disabled={file.status === "uploading" || file.status === "uploaded"} className="w-full px-3 py-2 border border-gray-300 rounded text-sm bg-white disabled:bg-gray-100"><option value="fast">Fast (default)</option><option value="hi_res">High res (slower)</option></select> : <div className="px-3 py-2 border border-gray-200 rounded text-sm bg-gray-50 text-gray-600">Strategy: Auto</div>}</div>
+          {!file.isPdf && <p className="text-xs text-amber-700 mt-3">{NON_PDF_TIP}</p>}
+        </div>)}</div>
+        {uploadStatus && <div className={`mt-4 p-3 rounded-lg ${uploadStatus === "success" ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}><p className="text-sm">{uploadMessage}</p></div>}
+        <div className="mt-6 pt-6 border-t flex flex-col md:flex-row gap-4 justify-between items-center"><div className="text-sm text-gray-600">{files.length} document{files.length === 1 ? "" : "s"} selected · Total: {formatSize(files.reduce((total, file) => total + file.bytes, 0))}{!allFieldsFilled && <span className="text-yellow-600 ml-2">(Please fill all required fields)</span>}</div><div className="flex gap-3">{errorCount > 0 && !isUploading && <button onClick={handleUpload} disabled={!allFieldsFilled} className="px-6 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg font-medium transition disabled:opacity-50">Retry Failed ({errorCount})</button>}<button onClick={handleUpload} disabled={isUploadDisabled()} className={`px-6 py-2 rounded-lg font-medium transition ${!isUploadDisabled() ? "bg-green-600 hover:bg-green-700 text-white" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}>{isUploading ? <span className="flex items-center gap-2"><Loader className="w-4 h-4 animate-spin" />Uploading...</span> : files.every((file) => file.status === "uploaded") ? "All Documents Uploaded" : `Upload ${files.filter((file) => file.status !== "uploaded").length} Document${files.filter((file) => file.status !== "uploaded").length === 1 ? "" : "s"}`}</button></div></div>
+      </div>}
+      {files.length === 0 && !isUploading && <div className="bg-white rounded-xl shadow p-6 text-center"><div className="max-w-xl mx-auto"><h3 className="font-semibold text-gray-800 mb-2">Upload documents for your RAG system</h3><p className="text-sm text-gray-600">Add up to three PDF, DOCX, HTML, TXT, or Markdown files. Provide a category and section for every file. PDFs can use Fast or High res; other file types use Auto extraction.</p><p className="text-sm text-gray-600 mt-3">Files with more than 250,000 extracted characters or 90 chunks are rejected before AI processing so no content is silently omitted.</p></div></div>}
     </div>
-  );
+  </div>;
 };
 
 export default UploadDocs;
