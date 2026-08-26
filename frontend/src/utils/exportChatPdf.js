@@ -13,6 +13,9 @@ export const exportChatPdf = async (chatElement) => {
 
   const transcript = chatElement.cloneNode(true);
   transcript.querySelectorAll("button").forEach((button) => button.remove());
+  transcript.querySelectorAll("[data-export-message]").forEach((message) => {
+    message.classList.remove("flex-row-reverse");
+  });
 
   printWindow.document.write(`<!doctype html>
 <html lang="en">
@@ -30,8 +33,48 @@ export const exportChatPdf = async (chatElement) => {
       .docchat-print-header p { margin: 5px 0 0; font: 12px/1.4 Arial, sans-serif; color: #6b7280; }
       .docchat-print-content { width: 100%; }
       .docchat-print-content button { display: none !important; }
-      .docchat-print-content > div { break-inside: avoid; page-break-inside: avoid; }
-      @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+      .docchat-print-content [data-export-message] {
+        display: block !important;
+        margin: 0 0 14px !important;
+        break-inside: auto !important;
+        page-break-inside: auto !important;
+      }
+      .docchat-print-content [data-export-message] > div:first-child {
+        display: none !important;
+      }
+      .docchat-print-content [data-export-message] > div:last-child {
+        max-width: none !important;
+        width: auto !important;
+        border-radius: 10px !important;
+        padding: 12px 14px !important;
+        box-shadow: none !important;
+        overflow: visible !important;
+        break-inside: auto !important;
+        page-break-inside: auto !important;
+      }
+      .docchat-print-content [data-export-role="user"] > div:last-child {
+        background: #eff6ff !important;
+        color: #111827 !important;
+        border-left: 4px solid #2563eb !important;
+      }
+      .docchat-print-content [data-export-role="assistant"] > div:last-child {
+        background: #f3f4f6 !important;
+        color: #111827 !important;
+        border-left: 4px solid #16a34a !important;
+      }
+      .docchat-print-content .prose {
+        max-width: none !important;
+      }
+      .docchat-print-content p,
+      .docchat-print-content li,
+      .docchat-print-content pre,
+      .docchat-print-content table {
+        break-inside: auto !important;
+        page-break-inside: auto !important;
+      }
+      @media print {
+        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      }
     </style>
   </head>
   <body>
