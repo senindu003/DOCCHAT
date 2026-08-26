@@ -100,6 +100,27 @@ export async function getUploadJob(jobId) {
   return payload;
 }
 
+export async function listDocuments() {
+  const response = await fetch(`${API_BASE_URL}/documents`, {
+    method: "GET",
+    headers: authHeaders(),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(errorMessage(payload.detail, "Could not load documents"));
+  return payload;
+}
+
+export async function removeDocument(documentInfo) {
+  const response = await fetch(`${API_BASE_URL}/documents`, {
+    method: "DELETE",
+    headers: authHeaders(),
+    body: JSON.stringify(documentInfo),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(errorMessage(payload.detail, "Could not remove document"));
+  return payload;
+}
+
 /*export async function sendFiles(payload) {
   const res = await fetch(`${VITE_API_BASE_URL}/set_info`, {
     method: "POST",

@@ -203,7 +203,7 @@ def create_ai_enhanced_summary_with_deepseek(text: list[str], images: list[str],
     
 
 
-def _summarize_chunk(chunk, user: str, category: str, section: str):
+def _summarize_chunk(chunk, user: str, category: str, section: str, filename: str):
     """Build one document. Calls are globally bounded to protect the LLM quota."""
     content_data = seperate_content_data(chunk)
     last_error = None
@@ -219,7 +219,13 @@ def _summarize_chunk(chunk, user: str, category: str, section: str):
             return (
                 Document(
                     page_content=str(summary),
-                    metadata={"username": user, "doc_id": doc_id, "category": category, "section": section},
+                    metadata={
+                        "username": user,
+                        "doc_id": doc_id,
+                        "category": category,
+                        "section": section,
+                        "source_filename": filename,
+                    },
                 ),
                 {
                     "doc_id": doc_id,
@@ -243,6 +249,7 @@ def create_langchain_docs(
     user: str,
     category: str,
     section: str,
+    filename: str,
     progress_callback: Callable[[int, int], None] | None = None,
 ):
     """Enrich independent chunks in parallel while preserving their source order."""
@@ -254,7 +261,7 @@ def create_langchain_docs(
     workers = min(SUMMARY_WORKERS, len(chunks))
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="chunk-summary") as executor:
         futures = {
-            executor.submit(_summarize_chunk, chunk, user, category, section): index
+            executor.submit(_summarize_chunk, chunk, user, category, section, filename): index
             for index, chunk in enumerate(chunks)
         }
         for future in as_completed(futures):
@@ -296,6 +303,7 @@ def create_my_rag(file, persist_directory, filename, category, section, progress
         user=persist_directory,
         category=category,
         section=section,
+        filename=filename,
         progress_callback=progress_callback,
     )
     return langchain_docs, original_contents
@@ -407,7 +415,7 @@ def process_single_file(
             )
 
         langchain_docs, original_contents = create_langchain_docs(
-            chunks, username, category, section, progress_callback=summary_progress
+            chunks, username, category, section, filename, progress_callback=summary_progress
         )
         _set_job_file_state(job_file_id, stage="indexing", progress=82)
 

@@ -6,6 +6,7 @@ from user_db.database import Base, engine, SessionLocal
 from user_db.models import UploadJob, UploadJobFile
 from routers.set_info import set_info_router
 from routers.get_info import get_info_router
+from routers.documents import documents_router
 
 @asynccontextmanager
 async def lifespan(app):
@@ -50,6 +51,7 @@ app.include_router(main_router)
 app.include_router(auth_router)
 app.include_router(set_info_router)
 app.include_router(get_info_router)
+app.include_router(documents_router)
 
 if __name__ == "__main__":
   import uvicorn
